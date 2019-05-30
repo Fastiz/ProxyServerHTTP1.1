@@ -26,7 +26,7 @@ int main(int argc, char *argv[]) {
 	FILE* sockswfp;
 
 	/*Wait for a client to connect*/
-  in_port_t servPort = atoi(argv[1]); // First arg:  local port
+	in_port_t servPort = atoi(argv[1]); // First arg:  local port
 	socksfd = open_server_socket(servPort);
 
 	/* Open separate streams for read and write, r+ doesn't always work. */
@@ -129,31 +129,48 @@ static int open_server_socket(unsigned short port) {
 
 
 static int open_client_socket( char* hostname, unsigned short port ) {
-	struct hostent *he;
-	struct sockaddr_in sa_in;
-	int sa_len, sock_family, sock_type, sock_protocol;
 	int sockfd;
-	(void) memset( (void*) &sa_in, 0, sizeof(sa_in) );
+	char portString[MAX_PORTSTRING_SIZE];
+	sprintf(portString, "%d", port);
 
-	/*Apparently, gethostbyname is deprecated*/
-	he = gethostbyname( hostname );
-	if ( he == (struct hostent*) 0 )
-		send_error( 404, "Not Found", (char*) 0, "Unknown host." );
-	sock_family = sa_in.sin_family = he->h_addrtype;
-	sock_type = SOCK_STREAM;
-	sock_protocol = 0;
-	sa_len = sizeof(sa_in);
-	(void) memmove( &sa_in.sin_addr, he->h_addr, he->h_length );
-	sa_in.sin_port = htons( port );
+  // Tell the system what kind(s) of address info we want
+  struct addrinfo addrCriteria;                   // Criteria for address match
+  memset(&addrCriteria, 0, sizeof(addrCriteria)); // Zero out structure
+  addrCriteria.ai_family = AF_UNSPEC;             // Any address family
+  addrCriteria.ai_socktype = SOCK_STREAM;         // Only stream sockets
+  addrCriteria.ai_protocol = IPPROTO_TCP;         // Only TCP protocol
 
-	sockfd = socket( sock_family, sock_type, sock_protocol );
-	if ( sockfd < 0 )
-		send_error( 500, "Internal Error", (char*) 0, "Couldn't create socket." );
+  // Get address(es) associated with the specified name/service
+  struct addrinfo *addrList; // Holder for list of addresses returned
+  // Modify servAddr contents to reference linked list of addresses
+  int rtnVal = getaddrinfo(hostname, portString, &addrCriteria, &addrList);
+  if (rtnVal != 0)
+    send_error( 404, "Not Found", (char*) 0, "Unknown host." );
 
-	if ( connect( sockfd, (struct sockaddr*) &sa_in, sa_len ) < 0 )
+	int connectRet;
+	// Iterate over returned addresses
+  for (struct addrinfo *addr = addrList; addr != NULL; addr = addr->ai_next) {
+		sockfd = socket( addr->ai_family, addr->ai_socktype, addr->ai_protocol );
+		if (sockfd < 0) {
+			send_error( 500, "Internal Error", (char*) 0, "Couldn't create socket." );
+			continue;
+		}
+
+		if ((connectRet = connect(sockfd, addr->ai_addr, addr->ai_addrlen)) < 0) {
+    	close(sockfd);
+      continue;
+		}
+
+	  // Connected succesfully!
+		break;
+  }
+
+	freeaddrinfo(addrList); // Free addrinfo allocated in getaddrinfo()
+
+	if (connectRet < 0)
 		send_error( 503, "Service Unavailable", (char*) 0, "Connection refused." );
-
-	return sockfd;
+	else
+		return sockfd;
 }
 
 
@@ -227,6 +244,7 @@ static void trim( char* line ) {
 
 static void DieWithSystemMessage(char * msg) {
 	printf("%s", msg);
+	exit(1);
 }
 
 static void send_error( int status, char* title, char* extra_header, char* text ) {
