@@ -26,7 +26,7 @@ int main(int argc, char *argv[]) {
 	FILE* sockswfp;
 
 	/*Wait for a client to connect*/
-	in_port_t servPort = atoi(argv[1]); // First arg:  local port
+	in_port_t servPort = atoi(argv[1]);     // First arg:  local port
 	socksfd = open_server_socket(servPort);
 
 	/* Open separate streams for read and write, r+ doesn't always work. */
@@ -46,7 +46,7 @@ int main(int argc, char *argv[]) {
 		send_error( 400, "Bad Request", (char*) 0, "Null URL." );
 
 	if ( strncasecmp( url, "http://", 7 ) == 0 ) {
-		(void) strncpy( url, "http", 4 );                                                 /* making sure it's lower case */
+		(void) strncpy( url, "http", 4 );                                                         /* making sure it's lower case */
 		if ( sscanf( url, "http://%[^:/]:%d%s", host, &iport, path ) == 3 )
 			port = (unsigned short) iport;
 		else if ( sscanf( url, "http://%[^/]%s", host, path ) == 2 )
@@ -83,16 +83,16 @@ static int open_server_socket(unsigned short port) {
 	in_port_t servPort = port;
 
 	// Create socket for incoming connections
-	int servSock;                 // Socket descriptor for server
+	int servSock;                     // Socket descriptor for server
 	if ((servSock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
 		DieWithSystemMessage("socket() failed");
 
 	// Construct local address structure
-	struct sockaddr_in servAddr;                              // Local address
-	memset(&servAddr, 0, sizeof(servAddr));                   // Zero out structure
-	servAddr.sin_family = AF_INET;                            // IPv4 address family
-	servAddr.sin_addr.s_addr = htonl(INADDR_ANY);             // Any incoming interface
-	servAddr.sin_port = htons(servPort);                      // Local port
+	struct sockaddr_in servAddr;                                  // Local address
+	memset(&servAddr, 0, sizeof(servAddr));                       // Zero out structure
+	servAddr.sin_family = AF_INET;                                // IPv4 address family
+	servAddr.sin_addr.s_addr = htonl(INADDR_ANY);                 // Any incoming interface
+	servAddr.sin_port = htons(servPort);                          // Local port
 
 	// Bind to the local address
 	if (bind(servSock, (struct sockaddr*) &servAddr, sizeof(servAddr)) < 0)
@@ -102,8 +102,8 @@ static int open_server_socket(unsigned short port) {
 	if (listen(servSock, MAXPENDING) < 0)
 		DieWithSystemMessage("listen() failed");
 
-	for (;;) {             // Run forever
-		struct sockaddr_in clntAddr;                         // Client address
+	for (;;) {                 // Run forever
+		struct sockaddr_in clntAddr;                                 // Client address
 		// Set length of client address structure (in-out parameter)
 		socklen_t clntAddrLen = sizeof(clntAddr);
 
@@ -114,7 +114,7 @@ static int open_server_socket(unsigned short port) {
 
 		// clntSock is connected to a client!
 
-		char clntName[INET_ADDRSTRLEN];                         // String to contain client address
+		char clntName[INET_ADDRSTRLEN];                                 // String to contain client address
 		if (inet_ntop(AF_INET, &clntAddr.sin_addr.s_addr, clntName,
 		              sizeof(clntName)) != NULL)
 			printf("Handling client %s/%d\n", clntName, ntohs(clntAddr.sin_port));
@@ -133,23 +133,23 @@ static int open_client_socket( char* hostname, unsigned short port ) {
 	char portString[MAX_PORTSTRING_SIZE];
 	sprintf(portString, "%d", port);
 
-  // Tell the system what kind(s) of address info we want
-  struct addrinfo addrCriteria;                   // Criteria for address match
-  memset(&addrCriteria, 0, sizeof(addrCriteria)); // Zero out structure
-  addrCriteria.ai_family = AF_UNSPEC;             // Any address family
-  addrCriteria.ai_socktype = SOCK_STREAM;         // Only stream sockets
-  addrCriteria.ai_protocol = IPPROTO_TCP;         // Only TCP protocol
+	// Tell the system what kind(s) of address info we want
+	struct addrinfo addrCriteria;                 // Criteria for address match
+	memset(&addrCriteria, 0, sizeof(addrCriteria)); // Zero out structure
+	addrCriteria.ai_family = AF_UNSPEC;           // Any address family
+	addrCriteria.ai_socktype = SOCK_STREAM;       // Only stream sockets
+	addrCriteria.ai_protocol = IPPROTO_TCP;       // Only TCP protocol
 
-  // Get address(es) associated with the specified name/service
-  struct addrinfo *addrList; // Holder for list of addresses returned
-  // Modify servAddr contents to reference linked list of addresses
-  int rtnVal = getaddrinfo(hostname, portString, &addrCriteria, &addrList);
-  if (rtnVal != 0)
-    send_error( 404, "Not Found", (char*) 0, "Unknown host." );
+	// Get address(es) associated with the specified name/service
+	struct addrinfo *addrList; // Holder for list of addresses returned
+	// Modify servAddr contents to reference linked list of addresses
+	int rtnVal = getaddrinfo(hostname, portString, &addrCriteria, &addrList);
+	if (rtnVal != 0)
+		send_error( 404, "Not Found", (char*) 0, "Unknown host." );
 
 	int connectRet;
 	// Iterate over returned addresses
-  for (struct addrinfo *addr = addrList; addr != NULL; addr = addr->ai_next) {
+	for (struct addrinfo *addr = addrList; addr != NULL; addr = addr->ai_next) {
 		sockfd = socket( addr->ai_family, addr->ai_socktype, addr->ai_protocol );
 		if (sockfd < 0) {
 			send_error( 500, "Internal Error", (char*) 0, "Couldn't create socket." );
@@ -157,15 +157,15 @@ static int open_client_socket( char* hostname, unsigned short port ) {
 		}
 
 		if ((connectRet = connect(sockfd, addr->ai_addr, addr->ai_addrlen)) < 0) {
-    	close(sockfd);
-      continue;
+			close(sockfd);
+			continue;
 		}
 
-	  // Connected succesfully!
+		// Connected succesfully!
 		break;
-  }
+	}
 
-	freeaddrinfo(addrList); // Free addrinfo allocated in getaddrinfo()
+	freeaddrinfo(addrList);     // Free addrinfo allocated in getaddrinfo()
 
 	if (connectRet < 0)
 		send_error( 503, "Service Unavailable", (char*) 0, "Connection refused." );
