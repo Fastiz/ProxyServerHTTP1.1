@@ -5,6 +5,10 @@
 #ifndef CONFIGACTIVESOCKET_H
 #define CONFIGACTIVESOCKET_H
 
+#include "fd_handler.h"
+
+fd_handler config_active_socket_fd_handler_init(void);
+
 void config_active_socket_read(struct selector_key *key);
 
 void config_active_socket_write(struct selector_key *key);

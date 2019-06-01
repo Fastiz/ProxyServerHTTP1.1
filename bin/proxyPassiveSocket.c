@@ -3,3 +3,13 @@
 //
 
 #include "include/proxyPassiveSocket.h"
+#define NULL 0
+
+fd_handler proxy_passive_socket_fd_handler_init(void){
+    fd_handler fd = {
+            .handle_read = proxy_passive_socket_read,
+            .handle_write = NULL,
+            .handle_block = NULL,
+            .handle_close = NULL
+    };
+}
