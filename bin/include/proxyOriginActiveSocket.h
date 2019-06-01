@@ -7,6 +7,8 @@
 
 #include "fd_handler.h"
 
+#define MAX_BUFF_SIZE 1024
+
 fd_handler proxy_origin_active_socket_fd_handler_init(void);
 
 void proxy_origin_active_socket_read(struct selector_key *key);
@@ -17,8 +19,12 @@ void proxy_origin_active_socket_block(struct selector_key *key);
 
 void proxy_origin_active_socket_close(struct selector_key *key);
 
-/*typedef struct {
+typedef struct {
+    int client_fd;
 
-} proxy_origin_active_socket_data;*/
+    char writeBufferExcess[MAX_BUFF_SIZE];
+    int excessLength;
+
+} proxy_origin_active_socket_data;
 
 #endif //PROXYORIGINACTIVESOCKET_H

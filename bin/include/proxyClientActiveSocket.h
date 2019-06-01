@@ -17,9 +17,8 @@ void proxy_client_active_socket_block(struct selector_key *key);
 
 void proxy_client_active_socket_close(struct selector_key *key);
 
-/*typedef struct {
-
-} proxy_client_active_socket_data;*/
-
+typedef struct {
+    int origin_fd;
+} proxy_client_active_socket_data;
 
 #endif //PROXYACTIVESOCKET_H
