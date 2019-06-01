@@ -11,7 +11,7 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <signal.h>
-#include "selector.h"
+#include "include/selector.h"
 #include "include/main.h"
 #include "include/proxy.h"
 

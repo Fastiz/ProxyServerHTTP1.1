@@ -8,7 +8,7 @@
 #include <netinet/in.h>
 #include <netdb.h>
 #include <arpa/inet.h>
-#include "selector.h"
+#include "include/selector.h"
 
 #define MAX_PORTSTRING_SIZE 10
 
