@@ -5,11 +5,11 @@
 #ifndef PROXYORIGINACTIVESOCKET_H
 #define PROXYORIGINACTIVESOCKET_H
 
-#include "fd_handler.h"
+#include "selector.h"
 
 #define MAX_BUFF_SIZE 1024
 
-fd_handler proxy_origin_active_socket_fd_handler_init(void);
+fd_handler * proxy_origin_active_socket_fd_handler(void);
 
 void proxy_origin_active_socket_read(struct selector_key *key);
 

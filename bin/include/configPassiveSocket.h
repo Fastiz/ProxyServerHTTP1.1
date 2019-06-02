@@ -5,7 +5,7 @@
 #ifndef CONFIGPASSIVESOCKET_H
 #define CONFIGPASSIVESOCKET_H
 
-#include "fd_handler.h"
+#include "selector.h"
 
 fd_handler config_passive_socket_fd_handler_init(void);
 
