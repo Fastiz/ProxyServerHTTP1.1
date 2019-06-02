@@ -3,7 +3,7 @@
 == Example ==
 
 Setup proxy server:
-~$ gcc main.c
+~$ gcc helpers.c main.c proxyClientActiveSocket.c proxyOriginActiveSocket.c proxyPassiveSocket.c selector.c -pthread
 ~$ ./a.out 9090 //9090 is the server port
 
 Client request:
