@@ -81,8 +81,8 @@ void proxy_origin_active_socket_read(struct selector_key *key) {
 	(void) fflush( sockcwfp );
 
 	/* Done. */
-	(void) close( client_fd );
-	(void) close( origin_fd );
+	//(void) close( client_fd );
+	//(void) close( origin_fd );
 }
 
 void proxy_origin_active_socket_block(struct selector_key *key) {

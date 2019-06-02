@@ -102,14 +102,15 @@ void proxy_client_active_socket_read(struct selector_key *key){
 		(void) fflush( sockowfp );
 
 		proxy_origin_active_socket_data * dataOrigin = malloc(sizeof(proxy_origin_active_socket_data));
+		dataOrigin->client_fd = client_fd;
 		if(SELECTOR_SUCCESS != selector_register(key->s, originSocket, proxy_origin_active_socket_fd_handler(),
 		                                         OP_READ, dataOrigin)) {
 			DieWithSystemMessage("registering fd failed");
 		}
 
 		/* Done. */
-		(void) close( client_fd );
-		(void) close( origin_fd );
+		//(void) close( client_fd );
+		//(void) close( origin_fd );
 	}
 }
 
