@@ -101,6 +101,10 @@ void proxy_client_active_socket_read(struct selector_key *key){
 				putc( ich, sockowfp );
 		(void) fflush( sockowfp );
 
+		if(selector_fd_set_nio(originSocket) == -1) {
+			DieWithSystemMessage("setting origin server flags failed");
+		}
+
 		proxy_origin_active_socket_data * dataOrigin = malloc(sizeof(proxy_origin_active_socket_data));
 		dataOrigin->client_fd = client_fd;
 		if(SELECTOR_SUCCESS != selector_register(key->s, originSocket, proxy_origin_active_socket_fd_handler(),

@@ -457,6 +457,7 @@ handle_iteration(fd_selector s) {
         if(ITEM_USED(item)) {
             key.fd   = item->fd;
             key.data = item->data;
+            //printf("fd: %d", key.fd);
             if(FD_ISSET(item->fd, &s->slave_r)) {
                 if(OP_READ & item->interest) {
                     if(0 == item->handler->handle_read) {

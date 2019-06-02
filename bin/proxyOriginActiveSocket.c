@@ -7,6 +7,8 @@
 #include "include/proxyOriginActiveSocket.h"
 #include "include/helpers.h"
 
+static int getLine(char * lineBuff, int size, int fd);
+
 static const fd_handler fd = {
 	.handle_read = proxy_origin_active_socket_read,
 	.handle_write = proxy_origin_active_socket_write,
@@ -41,18 +43,20 @@ void proxy_origin_active_socket_read(struct selector_key *key) {
 	int origin_fd = key->fd;
 	int client_fd = data->client_fd;
 
-	FILE* sockorfp = fdopen( origin_fd, "r" );
-	FILE* sockcwfp = fdopen( client_fd, "w" );;
+	//FILE* sockorfp = fdopen( origin_fd, "r" );
+	//FILE* sockcwfp = fdopen( client_fd, "w" );
 
 	/* Forward the response back to the client. */
 	int content_length = -1;
 	int first_line = 1;
 	int status = -1;
-	while ( fgets( line, sizeof(line), sockorfp ) != (char*) 0 ) {
+
+	while ( getLine(line, sizeof(line), origin_fd) > 0 ) {
 		if ( strcmp( line, "\n" ) == 0 || strcmp( line, "\r\n" ) == 0 )
 			break;
 
-		(void) fputs( line, sockcwfp );
+		send(client_fd, line, strlen(line), 0);
+
 		trim( line );
 		if ( first_line ) {
 			(void) sscanf( line, "%[^ ] %d %s", protocol2, &status, comment );
@@ -63,9 +67,10 @@ void proxy_origin_active_socket_read(struct selector_key *key) {
 	}
 
 	/* Add a response header. */
-	(void) fputs( "Connection: close\r\n", sockcwfp );
-	(void) fputs( line, sockcwfp );
-	(void) fflush( sockcwfp );
+	char * str = "Connection: close\r\n";
+	send(client_fd, str, strlen(str), 0);
+	send(client_fd, line, strlen(line), 0);
+
 	/* Under certain circumstances we don't look for the contents, even
 	** if there was a Content-Length.
 	*/
@@ -74,15 +79,32 @@ void proxy_origin_active_socket_read(struct selector_key *key) {
 
 	//if ( strcasecmp( method, "HEAD" ) != 0 && status != 304 ) {
 	/* Forward the content too, either counted or until EOF. */
-	for ( i = 0; ( content_length == -1 || i < content_length ) && ( ich = getc( sockorfp ) ) != EOF; ++i ) {
-		putc( ich, sockcwfp );
+	for ( i = 0; ( content_length == -1 || i < content_length ) && ( recv(origin_fd, &ich, 1, 0) > 0 ); ++i ) {
+		send(client_fd, &ich, 1, 0);
 	}
+
 	//}
-	(void) fflush( sockcwfp );
 
 	/* Done. */
 	//(void) close( client_fd );
 	//(void) close( origin_fd );
+}
+
+static int getLine(char * lineBuff, int size, int fd) {
+	char c = 0;
+	int count = 0;
+	int ret = recv(fd, &c, 1, 0);
+
+	while (c != '\n') {
+		lineBuff[count] = c;
+		count += ret;
+		ret = recv(fd, &c, 1, 0);
+	}
+
+	lineBuff[count] = '\n';
+	lineBuff[count + 1] = 0;
+
+	return count;
 }
 
 void proxy_origin_active_socket_block(struct selector_key *key) {

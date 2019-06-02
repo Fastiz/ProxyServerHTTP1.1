@@ -36,7 +36,7 @@ void proxy_passive_socket_read(struct selector_key *key) {
 		DieWithSystemMessage("accept() failed");
 
 	if(selector_fd_set_nio(clientSocket) == -1) {
-		DieWithSystemMessage("setting server flags failed");
+		DieWithSystemMessage("setting client flags failed");
 	}
 
 	data->origin_fd = -1;
