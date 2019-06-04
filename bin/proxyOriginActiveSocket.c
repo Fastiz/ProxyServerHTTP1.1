@@ -18,22 +18,21 @@ fd_handler * proxy_origin_active_socket_fd_handler(void){
 	return &fd;
 }
 
+/**
+ *  Contains buffers and client data
+ */
+void * proxy_origin_active_socket_data_init(int client_fd, buffer * read, buffer * write) {
+	proxy_origin_active_socket_data * data = malloc(sizeof(proxy_origin_active_socket_data));
+	data->client_fd = client_fd;
+	data->read_buff = read;
+	data->write_buff = write;
+	data->closed = 0;
+	return data;
+}
+
 void proxy_origin_active_socket_write(struct selector_key *key){
 	proxy_origin_active_socket_data * data = key->data;
 	int client_fd = data->client_fd;
-	/*char buff[MAX_BUFF_SIZE];
-	   int bytesRead = recv(key->data->client_fd, buff, MAX_BUFF_SIZE, 0);
-	   if(bytesRead == -1)
-	    DieWithSystemMessage("Error when reading client socket.");
-
-	   int result = send(key->fd, buff, bytesRead, 0);
-	   if(result == -1){
-	    if(errno == EWOULDBLOCK){
-	        //key->data->
-	    }else{
-	        DieWithSystemMessage("Error when writing origin socket.")
-	    }
-	   }*/
 
 	char aux[1000];
 	int ret;

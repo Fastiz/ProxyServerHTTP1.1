@@ -5,4 +5,4 @@ void trim( char* line );
 void DieWithSystemMessage(char * msg);
 void send_error( int status, char* title, char* extra_header, char* text );
 
-#endif
+#endif //HELPERS_H

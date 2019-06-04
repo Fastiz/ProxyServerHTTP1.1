@@ -25,8 +25,8 @@ fd_handler * proxy_passive_socket_fd_handler(void){
 }
 
 void proxy_passive_socket_read(struct selector_key *key) {
-	proxy_client_active_socket_data * dataClient = malloc(sizeof(proxy_client_active_socket_data));
-	struct sockaddr_in clntAddr;                                     // Client address
+	struct sockaddr_in clntAddr;	// Client address
+
 	/* Set length of client address structure (in-out parameter) */
 	socklen_t clntAddrLen = sizeof(clntAddr);
 
@@ -39,16 +39,11 @@ void proxy_passive_socket_read(struct selector_key *key) {
 		DieWithSystemMessage("setting client flags failed");
 	}
 
-	//TODO: Mover a proxyClientActiveSocket
-	dataClient->origin_fd = -1;
-	dataClient->state = READING_HEADER_FIRST_LINE;
-	dataClient->write_buff = new_buffer();
-	dataClient->read_buff = new_buffer();
-	dataClient->closed = 0;
+	void * clientData = proxy_client_active_socket_data_init();
 
 	/* clientSocket is connected to a client */
 	if(SELECTOR_SUCCESS != selector_register(key->s, clientSocket, proxy_client_active_socket_fd_handler(),
-	                                         OP_READ, dataClient)) {
+	                                         OP_READ, clientData)) {
 		DieWithSystemMessage("registering client fd failed");
 	}
 

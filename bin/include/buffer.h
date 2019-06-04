@@ -14,7 +14,7 @@ typedef struct buffer {
     /** writing position */
     int write;
 
-    /** position to get peeked line */
+    /** last peeked line position */
     int peek_line;
 } buffer;
 
@@ -30,10 +30,12 @@ int buffer_write_data (buffer * buff, char * data, int size);
 
 int buffer_read_data (buffer * buff, char * dest_buffer, int size);
 
-void buffer_reset_new_line (buffer * buff);
+void buffer_reset_peek_line (buffer * buff);
 
 int buffer_peek_line (buffer * buff, char * dest_buff, int size);
 
 void buffer_free(buffer * buff);
 
-#endif
+void buffer_clean(buffer * buff);
+
+#endif //BUFFER_H

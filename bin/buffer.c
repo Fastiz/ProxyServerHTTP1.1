@@ -19,10 +19,6 @@ int buffer_space (buffer * buff) {
     return BUFFER_SIZE - buffer_count(buff) - 1;
 }
 
-void buffer_reset_new_line (buffer * buff) {
-    buff->peek_line = buff->write;
-}
-
 int buffer_write_data (buffer * buff, char * data, int size) {
     int bytes_to_write = buffer_space(buff) > size ? size : buffer_space(buff);
     for (int i = 0; i < bytes_to_write; i++) {
@@ -71,4 +67,14 @@ int buffer_peek_line (buffer * buff, char * dest_buff, int size) {
 
 void buffer_free(buffer * buff) {
     free(buff);
+}
+
+void buffer_reset_peek_line(buffer * buff) {
+    buff->peek_line = buff->read;
+}
+
+void buffer_clean(buffer * buff) {
+    buff->write = 0;
+    buff->read = 0;
+    buff->peek_line = 0;
 }

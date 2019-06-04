@@ -1,7 +1,3 @@
-//
-// Created by fastiz on 01/06/19.
-//
-
 #ifndef PROXYORIGINACTIVESOCKET_H
 #define PROXYORIGINACTIVESOCKET_H
 
@@ -11,6 +7,8 @@
 #define MAX_BUFF_SIZE 1024
 
 fd_handler * proxy_origin_active_socket_fd_handler(void);
+
+void * proxy_origin_active_socket_data_init(int client_fd, buffer * read, buffer * write);
 
 void proxy_origin_active_socket_read(struct selector_key *key);
 

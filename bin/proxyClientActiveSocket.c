@@ -28,7 +28,68 @@ fd_handler * proxy_client_active_socket_fd_handler(void){
 	return &fd;
 }
 
-static void * open_origin_socket( void * clientData );
+enum client_states {
+	/**
+	 *  Reads the first line (explicit mode) or looks
+	 *  for the Host header (transparent mode) in the first request
+	 */
+	READING_HEADER_FIRST_LINE, 
+
+	/**
+	 *  Waits for the DNS request to resolve
+	 */
+	CONNECTING, 
+	
+	/**
+	 *  Transfers bits from the client to the origin server
+	 */
+	PASSING_CONTENT
+};
+
+enum ssl_states {
+	/**
+	 *  Connection doesn't use SSL
+	 */
+	NO_SSL,
+
+	/**
+	 *  Awaiting connection to the origin server
+	 */
+	SSL_CONNECTING,
+
+	/**
+	 *  Succesfully connected to the origin server through SSL
+	 */
+	SSL_OK
+};
+
+/**
+ *  Contains buffers and connection data
+ */
+typedef struct proxy_client_active_socket_data{
+    int origin_fd;
+    char* hostname;
+    unsigned short port;
+    buffer * write_buff;
+    buffer * read_buff;
+    enum client_states state;
+	enum ssl_states ssl;
+	int closed;
+} proxy_client_active_socket_data;
+
+
+static void * open_origin_socket(void * clientData);
+static void process_ssl (struct selector_key *key);
+
+void * proxy_client_active_socket_data_init() {
+	proxy_client_active_socket_data * data = malloc(sizeof(proxy_client_active_socket_data));
+	data->origin_fd = -1;
+	data->state = READING_HEADER_FIRST_LINE;
+	data->write_buff = new_buffer();
+	data->read_buff = new_buffer();
+	data->closed = 0;
+	return data;
+}
 
 void proxy_client_active_socket_read(struct selector_key *key) {
 	proxy_client_active_socket_data * data = key->data;
@@ -73,7 +134,7 @@ void proxy_client_active_socket_read(struct selector_key *key) {
 				send_error( 400, "Bad Request", (char*) 0, "Null URL." );
 
 			if ( strncasecmp( url, "http://", 7 ) == 0 ) {
-				(void) strncpy( url, "http", 4 );                                                                                                 /* making sure it's lower case */
+				(void) strncpy( url, "http", 4 );                                                                                                                 /* making sure it's lower case */
 				if ( sscanf( url, "http://%[^:/]:%d%s", host, &iport, path ) == 3 )
 					port = (unsigned short) iport;
 				else if ( sscanf( url, "http://%[^/]%s", host, path ) == 2 )
@@ -86,20 +147,21 @@ void proxy_client_active_socket_read(struct selector_key *key) {
 					*path = '\0';
 				} else
 					send_error( 400, "Bad Request", (char*) 0, "Can't parse URL." );
-				 ssl = 0;
+				ssl = NO_SSL;
 			} else if ( strcmp( method, "CONNECT" ) == 0 ) {
 				if ( sscanf( url, "%[^:]:%d", host, &iport ) == 2 )
-	    			port = (unsigned short) iport;
+					port = (unsigned short) iport;
 				else if ( sscanf( url, "%s", host ) == 1 )
-	    			port = 443;
+					port = 443;
 				else
-	    			send_error( 400, "Bad Request", (char*) 0, "Can't parse URL." );
-				ssl = 1;
+					send_error( 400, "Bad Request", (char*) 0, "Can't parse URL." );
+				ssl = SSL_CONNECTING;
 			} else
 				send_error( 400, "Bad Request", (char*) 0, "Unknown URL type." );
 
 			data->hostname = host;
 			data->port = port;
+			data->ssl = ssl;
 
 			struct selector_key* k = malloc(sizeof(*key));
 			if(k == NULL) {
@@ -119,6 +181,11 @@ void proxy_client_active_socket_read(struct selector_key *key) {
 	}
 
 	if (data->state == PASSING_CONTENT) {
+		if (data->ssl == SSL_CONNECTING) {
+			process_ssl(key);
+			return;
+		}
+
 		char aux[1000];
 		int ret;
 		int bytes_to_send;
@@ -143,6 +210,29 @@ void proxy_client_active_socket_read(struct selector_key *key) {
 	}
 }
 
+static void process_ssl (struct selector_key *key) {
+	proxy_client_active_socket_data * data = key->data;
+	char aux[1000];
+	int ret;
+
+	if (data->ssl == SSL_CONNECTING ) {
+
+		//ToDo: no se si todavia me llego todo el header!
+		do {
+			ret = buffer_peek_line(data->write_buff, aux, sizeof(aux));
+			buffer_read_data(data->write_buff, aux, ret);
+			aux[ret] = 0;
+		} while (ret > 0 && strcmp( aux, "\n" ) != 0 && strcmp( aux, "\r\n" ) != 0 );
+
+		if (ret > 0) {
+			char * str = "HTTP/1.0 200 Connection established\r\n\r\n";
+			send(key->fd, str, strlen(str), 0);
+			buffer_clean(data->write_buff);
+			data->ssl = SSL_OK;
+		}
+	}
+}
+
 void proxy_client_active_socket_write(struct selector_key *key) {
 	proxy_client_active_socket_data * data = key->data;
 	int origin_fd = data->origin_fd;
@@ -158,7 +248,7 @@ void proxy_client_active_socket_write(struct selector_key *key) {
 	selector_set_interest(key->s, origin_fd, OP_READ);
 }
 
-static void * open_origin_socket( void * clientKey ) {
+static void * open_origin_socket(void * clientKey) {
 	struct selector_key * key = clientKey;
 	proxy_client_active_socket_data * data = key->data;
 	int sockfd;
@@ -169,14 +259,14 @@ static void * open_origin_socket( void * clientKey ) {
 	pthread_detach(pthread_self());
 
 	/* Tell the system what kind(s) of address info we want */
-	struct addrinfo addrCriteria;                                 // Criteria for address match
-	memset(&addrCriteria, 0, sizeof(addrCriteria));               // Zero out structure
-	addrCriteria.ai_family = AF_UNSPEC;                           // Any address family
-	addrCriteria.ai_socktype = SOCK_STREAM;                       // Only stream sockets
-	addrCriteria.ai_protocol = IPPROTO_TCP;                       // Only TCP protocol
+	struct addrinfo addrCriteria;                                     // Criteria for address match
+	memset(&addrCriteria, 0, sizeof(addrCriteria));                   // Zero out structure
+	addrCriteria.ai_family = AF_UNSPEC;                               // Any address family
+	addrCriteria.ai_socktype = SOCK_STREAM;                           // Only stream sockets
+	addrCriteria.ai_protocol = IPPROTO_TCP;                           // Only TCP protocol
 
 	/* Get address(es) associated with the specified name/service */
-	struct addrinfo *addrList;                 // Holder for list of addresses returned
+	struct addrinfo *addrList;                     // Holder for list of addresses returned
 
 	/* Modify servAddr contents to reference linked list of addresses */
 	int rtnVal = getaddrinfo(data->hostname, portString, &addrCriteria, &addrList);
@@ -199,7 +289,7 @@ static void * open_origin_socket( void * clientKey ) {
 		break;
 	}
 
-	freeaddrinfo(addrList);                     // Free addrinfo allocated in getaddrinfo()
+	freeaddrinfo(addrList);		// Free addrinfo allocated in getaddrinfo()
 
 	if (connectRet < 0)
 		send_error( 503, "Service Unavailable", (char*) 0, "Connection refused." );
@@ -220,12 +310,12 @@ void proxy_client_active_socket_block(struct selector_key *key) {
 		DieWithSystemMessage("setting origin server flags failed");
 	}
 
-	//ToDO: mover a proxyOriginActiveSocket
-	proxy_origin_active_socket_data * originData = malloc(sizeof(proxy_origin_active_socket_data));
-	originData->client_fd = key->fd;
-	originData->read_buff = data->write_buff;
-	originData->write_buff = data->read_buff;
-	originData->closed = 0;
+	void * originData = proxy_origin_active_socket_data_init(key->fd, data->write_buff, data->read_buff);
+
+	if (data->ssl == 1) {
+		buffer_reset_peek_line(data->write_buff);
+		process_ssl(key);
+	}
 
 	if(SELECTOR_SUCCESS != selector_register(key->s, data->origin_fd, proxy_origin_active_socket_fd_handler(),
 	                                         OP_WRITE, originData)) {
