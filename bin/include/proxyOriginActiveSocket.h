@@ -6,6 +6,7 @@
 #define PROXYORIGINACTIVESOCKET_H
 
 #include "selector.h"
+#include "buffer.h"
 
 #define MAX_BUFF_SIZE 1024
 
@@ -21,10 +22,9 @@ void proxy_origin_active_socket_close(struct selector_key *key);
 
 typedef struct {
     int client_fd;
-
-    char writeBufferExcess[MAX_BUFF_SIZE];
-    int excessLength;
-
+    buffer * read_buff;
+    buffer * write_buff;
+    int closed;
 } proxy_origin_active_socket_data;
 
 #endif //PROXYORIGINACTIVESOCKET_H
