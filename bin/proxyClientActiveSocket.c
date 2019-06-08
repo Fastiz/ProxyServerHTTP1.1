@@ -9,6 +9,7 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <pthread.h>
+#include <ctype.h>
 #include "include/selector.h"
 #include "include/helpers.h"
 #include "include/proxyPassiveSocket.h"
@@ -33,7 +34,12 @@ enum client_states {
 	 *  Reads the first line (explicit mode) or looks
 	 *  for the Host header (transparent mode) in the first request
 	 */
-	READING_HEADER_FIRST_LINE, 
+	READING_HEADER_FIRST_LINE,
+
+	/**
+	 *  Searchs for host header in html request.
+	 */
+	 SEARCHING_FOR_HEADER_HOST,
 
 	/**
 	 *  Waits for the DNS request to resolve
@@ -97,15 +103,16 @@ void proxy_client_active_socket_read(struct selector_key *key) {
 	int client_fd = key->fd;
 	int origin_fd = data->origin_fd;
 
-	printf("origin: %d\n", origin_fd);
-
-	if (data->state == READING_HEADER_FIRST_LINE) {
+	if (data->state == READING_HEADER_FIRST_LINE){
 		char aux[1000];
 		int ret;
 		while ((ret = recv(client_fd, aux, sizeof(aux), 0)) > 0) {
 			//TODO: check buffer space
 			buffer_write_data(data->write_buff, aux, ret);
 		}
+
+        data->state = SEARCHING_FOR_HEADER_HOST;
+		ret = -2;
 
 		if (ret == 0) {
 			/* Connection was closed */
@@ -127,58 +134,129 @@ void proxy_client_active_socket_read(struct selector_key *key) {
 
 			/* Parse it. */
 			trim( aux );
-			if ( sscanf( aux, "%[^ ] %[^ ] %[^ ]", method, url, protocol ) != 3 )
-				send_error( 400, "Bad Request", (char*) 0, "Can't parse request." );
+			if ( sscanf( aux, "%[^ ] %[^ ] %[^ ]", method, url, protocol ) == 3 && url[0]!='/'){
+                if ( url[0] == '\0' )
+                    send_error( 400, "Bad Request", (char*) 0, "Null URL." );
 
-			if ( url[0] == '\0' )
-				send_error( 400, "Bad Request", (char*) 0, "Null URL." );
+                if ( strncasecmp( url, "http://", 7 ) == 0 ) {
+                    (void) strncpy( url, "http", 4 );                                                                                                                 /* making sure it's lower case */
+                    if ( sscanf( url, "http://%[^:/]:%d%s", host, &iport, path ) == 3 )
+                        port = (unsigned short) iport;
+                    else if ( sscanf( url, "http://%[^/]%s", host, path ) == 2 )
+                        port = 80;
+                    else if ( sscanf( url, "http://%[^:/]:%d", host, &iport ) == 2 ) {
+                        port = (unsigned short) iport;
+                        *path = '\0';
+                    } else if ( sscanf( url, "http://%[^/]", host ) == 1 ) {
+                        port = 80;
+                        *path = '\0';
+                    } else
+                        send_error( 400, "Bad Request", (char*) 0, "Can't parse URL." );
+                    ssl = NO_SSL;
+                } else if ( strcmp( method, "CONNECT" ) == 0 ) {
+                    if ( sscanf( url, "%[^:]:%d", host, &iport ) == 2 )
+                        port = (unsigned short) iport;
+                    else if ( sscanf( url, "%s", host ) == 1 )
+                        port = 443;
+                    else
+                        send_error( 400, "Bad Request", (char*) 0, "Can't parse URL." );
+                    ssl = SSL_CONNECTING;
+                } else
+                    send_error( 400, "Bad Request", (char*) 0, "Unknown URL type." );
 
-			if ( strncasecmp( url, "http://", 7 ) == 0 ) {
-				(void) strncpy( url, "http", 4 );                                                                                                                 /* making sure it's lower case */
-				if ( sscanf( url, "http://%[^:/]:%d%s", host, &iport, path ) == 3 )
-					port = (unsigned short) iport;
-				else if ( sscanf( url, "http://%[^/]%s", host, path ) == 2 )
-					port = 80;
-				else if ( sscanf( url, "http://%[^:/]:%d", host, &iport ) == 2 ) {
-					port = (unsigned short) iport;
-					*path = '\0';
-				} else if ( sscanf( url, "http://%[^/]", host ) == 1 ) {
-					port = 80;
-					*path = '\0';
-				} else
-					send_error( 400, "Bad Request", (char*) 0, "Can't parse URL." );
-				ssl = NO_SSL;
-			} else if ( strcmp( method, "CONNECT" ) == 0 ) {
-				if ( sscanf( url, "%[^:]:%d", host, &iport ) == 2 )
-					port = (unsigned short) iport;
-				else if ( sscanf( url, "%s", host ) == 1 )
-					port = 443;
-				else
-					send_error( 400, "Bad Request", (char*) 0, "Can't parse URL." );
-				ssl = SSL_CONNECTING;
-			} else
-				send_error( 400, "Bad Request", (char*) 0, "Unknown URL type." );
+                data->hostname = host;
+                data->port = port;
+                data->ssl = ssl;
 
-			data->hostname = host;
-			data->port = port;
-			data->ssl = ssl;
+                struct selector_key* k = malloc(sizeof(*key));
+                if(k == NULL) {
+                    send_error( 500, "Internal server error", (char*) 0, "Ran out of memory" );
+                }
+                memcpy(k, key, sizeof(*k));
 
-			struct selector_key* k = malloc(sizeof(*key));
-			if(k == NULL) {
-				send_error( 500, "Internal server error", (char*) 0, "Ran out of memory" );
+                /* Open socket to the origin server. */
+                if(-1 == pthread_create(&tid, 0, open_origin_socket, k)) {
+                    send_error( 500, "Internal server error", (char*) 0, "Couldn't process request" );
+                } else {
+                    selector_set_interest_key(key, OP_NOOP);
+                }
+
+                data->state = CONNECTING;
+
+                printf("Nuevo request hacia: %s:%d\n", host, port);
+			}else{
+			    data->state = SEARCHING_FOR_HEADER_HOST;
+			    data->ssl = NO_SSL;
 			}
-			memcpy(k, key, sizeof(*k));
-
-			/* Open socket to the origin server. */
-			if(-1 == pthread_create(&tid, 0, open_origin_socket, k)) {
-				send_error( 500, "Internal server error", (char*) 0, "Couldn't process request" );
-			} else {
-				selector_set_interest_key(key, OP_NOOP);
-			}
-
-			data->state = CONNECTING;
 		}
 	}
+
+	//TODO: client_fd could be empty if comes from state 'READING_HEADER_FIRST_LINE'
+	if(data->state == SEARCHING_FOR_HEADER_HOST){
+        char aux[1000];
+        int ret;
+        while ((ret = recv(client_fd, aux, sizeof(aux), 0)) > 0) {
+            //TODO: check buffer space
+            buffer_write_data(data->write_buff, aux, ret);
+        }
+        if (ret == 0) {
+            /* Connection was closed */
+            selector_unregister_fd(key->s, key->fd);
+            return;
+        }
+
+        /* Peeks the first line of the request */
+        ret = buffer_peek_line(data->write_buff, aux, sizeof(aux));
+        if (ret == -1)
+            send_error( 400, "Bad Request", (char*) 0, "Can't parse request." );
+
+        if(ret > 0){
+            pthread_t tid;
+            unsigned short port;
+            int iport;
+            char host[1000], host_header[1000], path[1000];
+
+            trim( aux );
+
+            lineToLowerCase(aux, ret);
+
+            if(sscanf(aux, "host: %s", host_header)==1){
+                if ( sscanf( host_header, "%[^:/]:%d%s", host, &iport, path ) == 3 )
+                    port = (unsigned short) iport;
+                else if ( sscanf( host_header, "%[^/]%s", host, path ) == 2 )
+                    port = 80;
+                else if ( sscanf( host_header, "%[^:/]:%d", host, &iport ) == 2 ) {
+                    port = (unsigned short) iport;
+                    *path = '\0';
+                } else if ( sscanf( host_header, "%[^/]", host ) == 1 ) {
+                    port = 80;
+                    *path = '\0';
+                } else
+                    send_error( 400, "Bad Request", (char*) 0, "Can't parse URL." );
+
+                data->hostname = host;
+                data->port = port;
+
+                struct selector_key* k = malloc(sizeof(*key));
+                if(k == NULL) {
+                    send_error( 500, "Internal server error", (char*) 0, "Ran out of memory" );
+                }
+                memcpy(k, key, sizeof(*k));
+
+                /* Open socket to the origin server. */
+                if(-1 == pthread_create(&tid, 0, open_origin_socket, k)) {
+                    send_error( 500, "Internal server error", (char*) 0, "Couldn't process request" );
+                } else {
+                    selector_set_interest_key(key, OP_NOOP);
+                }
+
+                data->state = CONNECTING;
+
+                printf("Nuevo request hacia: %s:%d\n", host, port);
+            }
+      }
+
+    }
 
 	if (data->state == PASSING_CONTENT) {
 		if (data->ssl == SSL_CONNECTING) {

@@ -1,6 +1,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <ctype.h>
 #include "include/helpers.h"
 
 void trim( char* line ) {
@@ -19,4 +20,10 @@ void DieWithSystemMessage(char * msg) {
 void send_error( int status, char* title, char* extra_header, char* text ) {
 	printf("%s", title);
 	exit( 1 );
+}
+
+void lineToLowerCase(char* line, int length){
+    for(int i=0; i < length; i++){
+        line[i] = tolower(line[i]);
+    }
 }
