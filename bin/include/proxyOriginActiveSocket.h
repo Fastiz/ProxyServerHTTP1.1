@@ -8,7 +8,19 @@
 
 fd_handler * proxy_origin_active_socket_fd_handler(void);
 
-void * proxy_origin_active_socket_data_init(int client_fd, buffer * read, buffer * write);
+void * proxy_origin_active_socket_data_init(fd_selector s, int client_fd, int origin_fd, void * client_data, buffer * read, buffer * write);
+
+void reset_origin_data(void * origin_data);
+
+void set_origin_transformation_fd(void * origin_data, int fd);
+
+int read_unchunked(void * origin_data, char * dest_buff, int size);
+
+void write_chunked(void * origin_data, char * data_buff, int size);
+
+int available_bytes(void * origin_data);
+
+int response_has_finished(void * origin_data);
 
 void proxy_origin_active_socket_read(struct selector_key *key);
 

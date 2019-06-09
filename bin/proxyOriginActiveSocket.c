@@ -6,12 +6,13 @@
 #include <string.h>
 #include "include/proxyOriginActiveSocket.h"
 #include "include/helpers.h"
+#include "include/proxyTransformation.h"
 
 static fd_handler fd = {
 	.handle_read = proxy_origin_active_socket_read,
 	.handle_write = proxy_origin_active_socket_write,
 	.handle_block = proxy_origin_active_socket_block,
-	.handle_close = proxy_origin_active_socket_close,
+	.handle_close = proxy_origin_active_socket_close
 };
 
 fd_handler * proxy_origin_active_socket_fd_handler(void){
@@ -38,6 +39,8 @@ typedef struct {
  */
 typedef struct {
     int client_fd;
+	int transformation_fd;
+	void * client_data;
     buffer * read_buff;
     buffer * write_buff;
 	buffer * parser_buff;
@@ -45,28 +48,38 @@ typedef struct {
     int closed;
 } proxy_origin_active_socket_data;
 
-static int available_bytes(proxy_origin_active_socket_data * data);
 void parse_content(proxy_origin_active_socket_data * data, struct selector_key * key);
-int read_unchunked(proxy_origin_active_socket_data * data, char * dest_buff, int size);
-void write_chunked(proxy_origin_active_socket_data * data, char * buff_data, int size);
 
-void * proxy_origin_active_socket_data_init(int client_fd, buffer * read, buffer * write) {
-	proxy_origin_active_socket_data * data = malloc(sizeof(proxy_origin_active_socket_data));
-	data->client_fd = client_fd;
-	data->read_buff = read;
-	data->write_buff = write;
-	data->parser_buff = new_buffer();
-	data->closed = 0;
-
-	parser_data * parser_data = malloc(sizeof(parser_data));
+void reset_origin_data(void * origin_data) {
+	proxy_origin_active_socket_data * data = origin_data;
+	parser_data * parser_data = data->parser_data;
+	buffer_clean(data->parser_buff);
 	parser_data->contentLength = -1;
 	parser_data->state = READING_HEADER;
 	parser_data->chunk_size = -1;
 	parser_data->chunk_bytes = -1;
 	parser_data->responseHasFinished = 0;
-	data->parser_data = parser_data;
+}
+
+void * proxy_origin_active_socket_data_init(fd_selector s, int client_fd, int origin_fd, void * client_data, buffer * read, buffer * write) {
+	proxy_origin_active_socket_data * data = malloc(sizeof(proxy_origin_active_socket_data));
+	data->client_fd = client_fd;
+	data->client_data = client_data;
+	data->transformation_fd = -1;
+	data->read_buff = read;
+	data->write_buff = write;
+	data->parser_buff = new_buffer();
+	data->closed = 0;
+	data->parser_data = malloc(sizeof(parser_data));
+	reset_origin_data(data);
+	proxy_transformation_data_init(s, client_data, data, client_fd, origin_fd);
 
 	return data;
+}
+
+void set_origin_transformation_fd(void * origin_data, int fd) {
+	proxy_origin_active_socket_data * data = origin_data;
+	data->transformation_fd = fd;
 }
 
 void proxy_origin_active_socket_write(struct selector_key *key){
@@ -96,7 +109,7 @@ void proxy_origin_active_socket_read(struct selector_key *key) {
 	do {
 		bytes_to_send = sizeof(aux) > available_bytes(data) ? available_bytes(data) : sizeof(aux);
 		if (bytes_to_send == 0) {
-			/* Buffer full. Must wait for the client to read it */
+			/* Buffer full. Must wait for the client/transformer to read it */
 			selector_set_interest_key(key, OP_NOOP);
 			break;
 		}
@@ -113,7 +126,8 @@ void proxy_origin_active_socket_read(struct selector_key *key) {
 	}
 }
 
-static int available_bytes(proxy_origin_active_socket_data * data) {
+int available_bytes(void * origin_data) {
+	proxy_origin_active_socket_data * data = origin_data;
 	parser_data * parser_data = data->parser_data;
 	//if (parser_data->state == READING_HEADER) {
 		int ret = buffer_space(data->write_buff) > buffer_space(data->parser_buff) ? buffer_space(data->parser_buff) : buffer_space(data->write_buff);
@@ -142,7 +156,6 @@ void parse_content(proxy_origin_active_socket_data * data, struct selector_key *
 			}
 
 			//TODO: que pasa si no encuentro chunked ni context length
-
 			buffer_write_data(data->write_buff, aux, ret);
 			aux[ret] = 0;
 			
@@ -154,21 +167,33 @@ void parse_content(proxy_origin_active_socket_data * data, struct selector_key *
 	}
 
 	if (parser_data->state == READING_BODY) {
-		while ((ret = read_unchunked(data, aux, sizeof(aux))) > 0) {
-			//buffer_write_data(data->write_buff, aux, ret);
-			write_chunked(data, aux, ret);
-		}
+		if (data->transformation_fd == -1) {
+			while ((ret = read_unchunked(data, aux, sizeof(aux))) > 0) {
+				//buffer_write_data(data->write_buff, aux, ret);
+				write_chunked(data, aux, ret);
+			}
 
-		if (parser_data->responseHasFinished == 1) {
-			/* Write a 0-byte chunk to indicate end of body */
-			write_chunked(data, "", 0);
+			if (response_has_finished(data) == 1) {
+				/* Write a 0-byte chunk to indicate end of body */
+				write_chunked(data, "", 0);
+				reset_origin_data(data);
+			}	
+		} else {
+			selector_set_interest(key->s, data->transformation_fd, OP_WRITE);
+			return;
 		}
 	}
 
 	selector_set_interest(key->s, data->client_fd, OP_WRITE);
 }
 
-int read_unchunked(proxy_origin_active_socket_data * data, char * dest_buff, int size) {
+int response_has_finished(void * origin_data) {
+	proxy_origin_active_socket_data * data = origin_data;
+	return data->parser_data->responseHasFinished;
+}
+
+int read_unchunked(void * origin_data, char * dest_buff, int size) {
+	proxy_origin_active_socket_data * data = origin_data;
 	parser_data * parser_data = data->parser_data;
 	int ret;
 
@@ -202,7 +227,6 @@ int read_unchunked(proxy_origin_active_socket_data * data, char * dest_buff, int
 
 					if(parser_data->chunk_size == 0)
 						parser_data->responseHasFinished = 1;
-						//Tal vez aca se pueda resetear la data del origin
 				}
 			}
 
@@ -245,13 +269,13 @@ int read_unchunked(proxy_origin_active_socket_data * data, char * dest_buff, int
 }
 
 //todo: deberia retornar int?
-void write_chunked(proxy_origin_active_socket_data * data, char * buff_data, int size) {
-	parser_data * parser_data = data->parser_data;
+void write_chunked(void * origin_data, char * data_buff, int size) {
+	proxy_origin_active_socket_data * data = origin_data;
 	char hex[10];
 
 	sprintf(hex, "%X\r\n", size);
 	buffer_write_data(data->write_buff, hex, strlen(hex));
-	buffer_write_data(data->write_buff, buff_data, size);
+	buffer_write_data(data->write_buff, data_buff, size);
 	buffer_write_data(data->write_buff, "\r\n", 2);
 }
 

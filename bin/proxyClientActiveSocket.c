@@ -22,7 +22,7 @@ static fd_handler fd = {
 	.handle_read = proxy_client_active_socket_read,
 	.handle_write = proxy_client_active_socket_write,
 	.handle_block = proxy_client_active_socket_block,
-	.handle_close = proxy_client_active_socket_close,
+	.handle_close = proxy_client_active_socket_close
 };
 
 fd_handler * proxy_client_active_socket_fd_handler(void){
@@ -74,6 +74,7 @@ enum ssl_states {
  */
 typedef struct proxy_client_active_socket_data{
     int origin_fd;
+	int transformation_fd;
     char* hostname;
     unsigned short port;
 	buffer * header_buff;
@@ -91,11 +92,17 @@ static void process_ssl (struct selector_key *key);
 void * proxy_client_active_socket_data_init() {
 	proxy_client_active_socket_data * data = malloc(sizeof(proxy_client_active_socket_data));
 	data->origin_fd = -1;
+	data->transformation_fd = -1;
 	data->state = READING_HEADER_FIRST_LINE;
 	data->write_buff = new_buffer();
 	data->read_buff = new_buffer();
 	data->closed = 0;
 	return data;
+}
+
+void set_client_transformation_fd(void * client_data, int fd) {
+	proxy_client_active_socket_data * data = client_data;
+	data->transformation_fd = fd;
 }
 
 void proxy_client_active_socket_read(struct selector_key *key) {
@@ -313,8 +320,7 @@ static void process_ssl (struct selector_key *key) {
 
 void proxy_client_active_socket_write(struct selector_key *key) {
 	proxy_client_active_socket_data * data = key->data;
-	int origin_fd = data->origin_fd;
-
+	
 	char aux[1000];
 	int ret;
 	while ((ret = buffer_read_data(data->read_buff, aux, sizeof(aux))) > 0) {
@@ -323,7 +329,12 @@ void proxy_client_active_socket_write(struct selector_key *key) {
 	}
 
 	selector_set_interest_key(key, OP_READ);
-	selector_set_interest(key->s, origin_fd, OP_READ);
+
+	if (data->transformation_fd == -1) {
+		selector_set_interest(key->s, data->origin_fd, OP_READ);
+	} else {
+		selector_set_interest(key->s, data->transformation_fd, OP_READ);
+	}
 }
 
 static void * open_origin_socket(void * clientKey) {
@@ -388,7 +399,7 @@ void proxy_client_active_socket_block(struct selector_key *key) {
 		DieWithSystemMessage("setting origin server flags failed");
 	}
 
-	void * originData = proxy_origin_active_socket_data_init(key->fd, data->write_buff, data->read_buff);
+	void * originData = proxy_origin_active_socket_data_init(key->s, key->fd, data->origin_fd, data, data->write_buff, data->read_buff);
 
 	if (data->ssl == SSL_CONNECTING) {
 		buffer_reset_peek_line(data->write_buff);
