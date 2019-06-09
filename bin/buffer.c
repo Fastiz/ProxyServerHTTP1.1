@@ -27,7 +27,7 @@ int buffer_write_data (buffer * buff, char * data, int size) {
         if (buff->write == BUFFER_SIZE)
             buff->write = 0;
     }
-    return bytes_to_write;
+    return bytes_to_write > 0 ? bytes_to_write : 0;
 }
 
 int buffer_read_data (buffer * buff, char * dest_buffer, int size) {
@@ -38,14 +38,13 @@ int buffer_read_data (buffer * buff, char * dest_buffer, int size) {
         if (buff->read == BUFFER_SIZE)
             buff->read = 0;
     }
-    return bytes_to_read;
+    return bytes_to_read > 0 ? bytes_to_read : 0;
 }
 
 int buffer_peek_line (buffer * buff, char * dest_buff, int size) {
     int aux = buff->peek_line;
-    int space = buffer_space(buff);
 
-    for (int i = 0;i < space;i++) {
+    for (int i = 0; aux != buff->write; i++) {
         if (i >= size)
             return -1;
 

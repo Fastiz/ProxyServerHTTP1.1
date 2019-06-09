@@ -8,3 +8,4 @@ Setup proxy server:
 
 Client request:
 ~$ http_proxy=localhost:9090 curl google.com
+~$ https_proxy=localhost:9090 curl https://www.google.com

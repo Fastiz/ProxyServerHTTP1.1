@@ -49,6 +49,7 @@ int main(int argc, char *argv[]) {
 		DieWithSystemMessage("unable to create selector");
 	}
 
+	//ToDo: deberia socketServer ser no bloqueante?
 	ss = selector_register(selector, socketServer, proxy_passive_socket_fd_handler(),
 	                       OP_READ, NULL);
 	if(ss != SELECTOR_SUCCESS) {

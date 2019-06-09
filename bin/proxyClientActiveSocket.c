@@ -76,6 +76,7 @@ typedef struct proxy_client_active_socket_data{
     int origin_fd;
     char* hostname;
     unsigned short port;
+	buffer * header_buff;
     buffer * write_buff;
     buffer * read_buff;
     enum client_states state;
@@ -271,6 +272,7 @@ void proxy_client_active_socket_read(struct selector_key *key) {
 		do {
 			bytes_to_send = sizeof(aux) > buffer_space(data->write_buff) ? buffer_space(data->write_buff) : sizeof(aux);
 			if (bytes_to_send == 0) {
+				/* Buffer full. Must wait for the origin server to read it */
 				selector_set_interest_key(key, OP_NOOP);
 				break;
 			}
@@ -294,8 +296,6 @@ static void process_ssl (struct selector_key *key) {
 	int ret;
 
 	if (data->ssl == SSL_CONNECTING ) {
-
-		//ToDo: no se si todavia me llego todo el header!
 		do {
 			ret = buffer_peek_line(data->write_buff, aux, sizeof(aux));
 			buffer_read_data(data->write_buff, aux, ret);
@@ -390,7 +390,7 @@ void proxy_client_active_socket_block(struct selector_key *key) {
 
 	void * originData = proxy_origin_active_socket_data_init(key->fd, data->write_buff, data->read_buff);
 
-	if (data->ssl == 1) {
+	if (data->ssl == SSL_CONNECTING) {
 		buffer_reset_peek_line(data->write_buff);
 		process_ssl(key);
 	}

@@ -18,15 +18,54 @@ fd_handler * proxy_origin_active_socket_fd_handler(void){
 	return &fd;
 }
 
+#define CHUNK_SIZE 100
+
+enum parser_states {
+	READING_HEADER,
+	READING_BODY
+};
+
+typedef struct {
+	enum parser_states state;
+	int responseHasFinished;
+	int contentLength;
+	int chunk_size;
+	int chunk_bytes;
+} parser_data;
+
 /**
  *  Contains buffers and client data
  */
+typedef struct {
+    int client_fd;
+    buffer * read_buff;
+    buffer * write_buff;
+	buffer * parser_buff;
+	parser_data * parser_data;
+    int closed;
+} proxy_origin_active_socket_data;
+
+static int available_bytes(proxy_origin_active_socket_data * data);
+void parse_content(proxy_origin_active_socket_data * data, struct selector_key * key);
+int read_unchunked(proxy_origin_active_socket_data * data, char * dest_buff, int size);
+void write_chunked(proxy_origin_active_socket_data * data, char * buff_data, int size);
+
 void * proxy_origin_active_socket_data_init(int client_fd, buffer * read, buffer * write) {
 	proxy_origin_active_socket_data * data = malloc(sizeof(proxy_origin_active_socket_data));
 	data->client_fd = client_fd;
 	data->read_buff = read;
 	data->write_buff = write;
+	data->parser_buff = new_buffer();
 	data->closed = 0;
+
+	parser_data * parser_data = malloc(sizeof(parser_data));
+	parser_data->contentLength = -1;
+	parser_data->state = READING_HEADER;
+	parser_data->chunk_size = -1;
+	parser_data->chunk_bytes = -1;
+	parser_data->responseHasFinished = 0;
+	data->parser_data = parser_data;
+
 	return data;
 }
 
@@ -52,25 +91,168 @@ void proxy_origin_active_socket_read(struct selector_key *key) {
 	int origin_fd = key->fd;
 
 	char aux[1000];
-	int ret;
+	int ret = -1;
 	int bytes_to_send;
 	do {
-		bytes_to_send = sizeof(aux) > buffer_space(data->write_buff) ? buffer_space(data->write_buff) : sizeof(aux);
+		bytes_to_send = sizeof(aux) > available_bytes(data) ? available_bytes(data) : sizeof(aux);
 		if (bytes_to_send == 0) {
+			/* Buffer full. Must wait for the client to read it */
 			selector_set_interest_key(key, OP_NOOP);
 			break;
 		}
 		ret = recv(origin_fd, aux, bytes_to_send, 0);
-		buffer_write_data(data->write_buff, aux, ret);
+		buffer_write_data(data->parser_buff, aux, ret);
 	} while (ret > 0);
+
+	parse_content(data, key);
 
 	if (ret == 0) {
 		/* Connection was closed */
 		selector_unregister_fd(key->s, key->fd);
 		return;
 	}
+}
 
-	selector_set_interest(key->s, client_fd, OP_WRITE);
+static int available_bytes(proxy_origin_active_socket_data * data) {
+	parser_data * parser_data = data->parser_data;
+	//if (parser_data->state == READING_HEADER) {
+		int ret = buffer_space(data->write_buff) > buffer_space(data->parser_buff) ? buffer_space(data->parser_buff) : buffer_space(data->write_buff);
+		/* The response will likely get longer due to the chunked encoding */
+		return (ret - 80) > 0 ? ret - 80 : 0; 
+	//}
+}
+
+void parse_content(proxy_origin_active_socket_data * data, struct selector_key * key) {
+	parser_data * parser_data = data->parser_data;
+	char aux[1000];
+	int ret;
+	
+	if (parser_data->state == READING_HEADER) {
+		while ((ret = buffer_peek_line(data->parser_buff, aux, sizeof(aux))) > 0) {
+			buffer_read_data(data->parser_buff, aux, ret);
+
+			if (strncasecmp(aux, "Content-Length:", 15) == 0) {
+				int contentLength;
+				/* Space after ':' is optional */
+				if (sscanf(aux + 15, "%d", &contentLength) == 1 || sscanf(aux + 15, " %d", &contentLength) == 1) {
+					parser_data->contentLength = contentLength;
+					buffer_write_data(data->write_buff, "Transfer-Encoding: chunked\n", 27);
+				}
+				continue;
+			}
+
+			//TODO: que pasa si no encuentro chunked ni context length
+
+			buffer_write_data(data->write_buff, aux, ret);
+			aux[ret] = 0;
+			
+			if (strcmp(aux, "\n") == 0 || strcmp(aux, "\r\n") == 0) {
+				parser_data->state = READING_BODY;
+				break;
+			}
+		}
+	}
+
+	if (parser_data->state == READING_BODY) {
+		while ((ret = read_unchunked(data, aux, sizeof(aux))) > 0) {
+			//buffer_write_data(data->write_buff, aux, ret);
+			write_chunked(data, aux, ret);
+		}
+
+		if (parser_data->responseHasFinished == 1) {
+			/* Write a 0-byte chunk to indicate end of body */
+			write_chunked(data, "", 0);
+		}
+	}
+
+	selector_set_interest(key->s, data->client_fd, OP_WRITE);
+}
+
+int read_unchunked(proxy_origin_active_socket_data * data, char * dest_buff, int size) {
+	parser_data * parser_data = data->parser_data;
+	int ret;
+
+	if (parser_data->contentLength != -1) {
+		ret = buffer_read_data(data->parser_buff, dest_buff, size);
+		parser_data->contentLength -= ret;
+		if (parser_data->contentLength == 0)
+			parser_data->responseHasFinished = 1;
+		//TODO: Si leo mas bytes que el context length es un internal server error!
+	} else {
+		int flag = 0;
+		char aux[20];
+		int ret1, ret2;
+		ret = 0;
+		
+		while (flag == 0) {
+			if (parser_data->chunk_bytes == 0) {
+				char endOfChunk[2];
+				buffer_reset_peek_line(data->parser_buff);
+				ret1 = buffer_peek_line(data->parser_buff, endOfChunk, sizeof(endOfChunk));
+
+				if (ret1 == -1)
+					send_error(500, "Internal server error", (char*) 0, "Unexpected body format");
+
+				if (ret1 > 0) {
+					if (strcmp(endOfChunk, "\r\n") != 0)
+						send_error(500, "Internal server error", (char*) 0, "Unexpected body format");
+
+					buffer_read_data(data->parser_buff, aux, ret1);
+					parser_data->chunk_bytes = -1;
+
+					if(parser_data->chunk_size == 0)
+						parser_data->responseHasFinished = 1;
+						//Tal vez aca se pueda resetear la data del origin
+				}
+			}
+
+			if (parser_data->chunk_bytes == -1) {
+				char beginningOfChunk[12], hex[10];
+			
+				buffer_reset_peek_line(data->parser_buff);
+				ret2 = buffer_peek_line(data->parser_buff, beginningOfChunk, sizeof(beginningOfChunk));
+
+				if (ret2 == -1)
+					send_error(500, "Internal server error", (char*) 0, "Unexpected body format");
+					
+			
+				if (ret2 > 0) {
+					if (sscanf(beginningOfChunk, "%9s\r\n", hex) != 1)
+						send_error(500, "Internal server error", (char*) 0, "Unexpected body format");
+				
+					parser_data->chunk_size = parser_data->chunk_bytes = strtol(hex, (char**)0, 16);
+					buffer_read_data(data->parser_buff, aux, ret2);
+
+					if (parser_data->chunk_size == 0)
+						continue;
+				}
+			}
+
+			int bytes_to_read = size > parser_data->chunk_bytes ? parser_data->chunk_bytes : size;	
+			int retAux = buffer_read_data(data->parser_buff, dest_buff + ret, bytes_to_read);
+
+			size -= retAux;
+			parser_data->chunk_bytes -= retAux;
+
+			if (retAux == 0)
+				flag = 1;
+
+			ret += retAux;
+		}
+	}
+
+	return ret;
+}
+
+//todo: deberia retornar int?
+void write_chunked(proxy_origin_active_socket_data * data, char * buff_data, int size) {
+	parser_data * parser_data = data->parser_data;
+	char hex[10];
+
+	sprintf(hex, "%X\r\n", size);
+	buffer_write_data(data->write_buff, hex, strlen(hex));
+	buffer_write_data(data->write_buff, buff_data, size);
+	buffer_write_data(data->write_buff, "\r\n", 2);
 }
 
 void proxy_origin_active_socket_block(struct selector_key *key) {
