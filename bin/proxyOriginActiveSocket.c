@@ -107,7 +107,6 @@ void proxy_origin_active_socket_write(struct selector_key *key){
 
 void proxy_origin_active_socket_read(struct selector_key *key) {
 	proxy_origin_active_socket_data * data = key->data;
-
 	int client_fd = data->client_fd;
 	int origin_fd = key->fd;
 
@@ -122,6 +121,9 @@ void proxy_origin_active_socket_read(struct selector_key *key) {
 			break;
 		}
 		ret = recv(origin_fd, aux, bytes_to_send, 0);
+		/* reset the connection if necessary */
+		if (ret > 0 && response_has_finished(data) == 1)
+			reset_origin_data(key->s, data, key->fd);		
 		buffer_write_data(data->parser_buff, aux, ret);
 	} while (ret > 0);
 
@@ -151,10 +153,6 @@ void parse_content(proxy_origin_active_socket_data * data, struct selector_key *
 
 	if (parser_data->state == READING_HEADER) {
 		while ((ret = buffer_peek_line(data->parser_buff, aux, sizeof(aux))) > 0) {
-			if (data->parser_data->responseHasFinished == 1) {
-				reset_origin_data(key->s, data, key->fd);
-			}
-
 			buffer_read_data(data->parser_buff, aux, ret);
 
 			if (strncasecmp(aux, "Content-Length:", 15) == 0) {
