@@ -23,7 +23,8 @@ fd_handler * proxy_origin_active_socket_fd_handler(void){
 
 enum parser_states {
 	READING_HEADER,
-	READING_BODY
+	READING_BODY,
+	SSL_CONNECTION
 };
 
 typedef struct {
@@ -38,41 +39,48 @@ typedef struct {
  *  Contains buffers and client data
  */
 typedef struct {
-    int client_fd;
+	int client_fd;
 	int transformation_fd;
 	void * client_data;
-    buffer * read_buff;
-    buffer * write_buff;
+	int ssl;
+	buffer * read_buff;
+	buffer * write_buff;
 	buffer * parser_buff;
 	parser_data * parser_data;
-    int closed;
+	int closed;
 } proxy_origin_active_socket_data;
 
 void parse_content(proxy_origin_active_socket_data * data, struct selector_key * key);
 
-void reset_origin_data(void * origin_data) {
+void reset_origin_data(fd_selector s, void * origin_data, int origin_fd) {
 	proxy_origin_active_socket_data * data = origin_data;
 	parser_data * parser_data = data->parser_data;
 	buffer_clean(data->parser_buff);
 	parser_data->contentLength = -1;
-	parser_data->state = READING_HEADER;
 	parser_data->chunk_size = -1;
 	parser_data->chunk_bytes = -1;
 	parser_data->responseHasFinished = 0;
+
+	if (data->ssl == 1) {
+		parser_data->state = SSL_CONNECTION;
+	} else {
+		parser_data->state = READING_HEADER;
+		proxy_transformation_data_init(s, data->client_data, data, data->client_fd, origin_fd);
+	}
 }
 
-void * proxy_origin_active_socket_data_init(fd_selector s, int client_fd, int origin_fd, void * client_data, buffer * read, buffer * write) {
+void * proxy_origin_active_socket_data_init(fd_selector s, int ssl, int client_fd, int origin_fd, void * client_data, buffer * read, buffer * write) {
 	proxy_origin_active_socket_data * data = malloc(sizeof(proxy_origin_active_socket_data));
 	data->client_fd = client_fd;
 	data->client_data = client_data;
 	data->transformation_fd = -1;
+	data->ssl = ssl;
 	data->read_buff = read;
 	data->write_buff = write;
 	data->parser_buff = new_buffer();
 	data->closed = 0;
 	data->parser_data = malloc(sizeof(parser_data));
-	reset_origin_data(data);
-	proxy_transformation_data_init(s, client_data, data, client_fd, origin_fd);
+	reset_origin_data(s, data, origin_fd);
 
 	return data;
 }
@@ -107,7 +115,7 @@ void proxy_origin_active_socket_read(struct selector_key *key) {
 	int ret = -1;
 	int bytes_to_send;
 	do {
-		bytes_to_send = sizeof(aux) > available_bytes(data) ? available_bytes(data) : sizeof(aux);
+		bytes_to_send = sizeof(aux) > available_response_bytes(data) ? available_response_bytes(data) : sizeof(aux);
 		if (bytes_to_send == 0) {
 			/* Buffer full. Must wait for the client/transformer to read it */
 			selector_set_interest_key(key, OP_NOOP);
@@ -126,13 +134,13 @@ void proxy_origin_active_socket_read(struct selector_key *key) {
 	}
 }
 
-int available_bytes(void * origin_data) {
+int available_response_bytes(void * origin_data) {
 	proxy_origin_active_socket_data * data = origin_data;
 	parser_data * parser_data = data->parser_data;
 	//if (parser_data->state == READING_HEADER) {
-		int ret = buffer_space(data->write_buff) > buffer_space(data->parser_buff) ? buffer_space(data->parser_buff) : buffer_space(data->write_buff);
-		/* The response will likely get longer due to the chunked encoding */
-		return (ret - 80) > 0 ? ret - 80 : 0; 
+	int ret = buffer_space(data->write_buff) > buffer_space(data->parser_buff) ? buffer_space(data->parser_buff) : buffer_space(data->write_buff);
+	/* The response will likely get longer due to the chunked encoding */
+	return (ret - 80) > 0 ? ret - 80 : 0;
 	//}
 }
 
@@ -140,9 +148,13 @@ void parse_content(proxy_origin_active_socket_data * data, struct selector_key *
 	parser_data * parser_data = data->parser_data;
 	char aux[1000];
 	int ret;
-	
+
 	if (parser_data->state == READING_HEADER) {
 		while ((ret = buffer_peek_line(data->parser_buff, aux, sizeof(aux))) > 0) {
+			if (data->parser_data->responseHasFinished == 1) {
+				reset_origin_data(key->s, data, key->fd);
+			}
+
 			buffer_read_data(data->parser_buff, aux, ret);
 
 			if (strncasecmp(aux, "Content-Length:", 15) == 0) {
@@ -158,12 +170,14 @@ void parse_content(proxy_origin_active_socket_data * data, struct selector_key *
 			//TODO: que pasa si no encuentro chunked ni context length
 			buffer_write_data(data->write_buff, aux, ret);
 			aux[ret] = 0;
-			
+
 			if (strcmp(aux, "\n") == 0 || strcmp(aux, "\r\n") == 0) {
 				parser_data->state = READING_BODY;
 				break;
 			}
 		}
+
+		selector_set_interest(key->s, data->client_fd, OP_WRITE);
 	}
 
 	if (parser_data->state == READING_BODY) {
@@ -176,15 +190,21 @@ void parse_content(proxy_origin_active_socket_data * data, struct selector_key *
 			if (response_has_finished(data) == 1) {
 				/* Write a 0-byte chunk to indicate end of body */
 				write_chunked(data, "", 0);
-				reset_origin_data(data);
-			}	
+			}
+
+			selector_set_interest(key->s, data->client_fd, OP_WRITE);
 		} else {
 			selector_set_interest(key->s, data->transformation_fd, OP_WRITE);
-			return;
 		}
 	}
 
-	selector_set_interest(key->s, data->client_fd, OP_WRITE);
+	if (parser_data->state == SSL_CONNECTION) {
+		while ((ret = buffer_read_data(data->parser_buff, aux, sizeof(aux))) > 0) {
+			buffer_write_data(data->write_buff, aux, ret);
+		}
+
+		selector_set_interest(key->s, data->client_fd, OP_WRITE);
+	}
 }
 
 int response_has_finished(void * origin_data) {
@@ -208,7 +228,7 @@ int read_unchunked(void * origin_data, char * dest_buff, int size) {
 		char aux[20];
 		int ret1, ret2;
 		ret = 0;
-		
+
 		while (flag == 0) {
 			if (parser_data->chunk_bytes == 0) {
 				char endOfChunk[2];
@@ -232,18 +252,18 @@ int read_unchunked(void * origin_data, char * dest_buff, int size) {
 
 			if (parser_data->chunk_bytes == -1) {
 				char beginningOfChunk[12], hex[10];
-			
+
 				buffer_reset_peek_line(data->parser_buff);
 				ret2 = buffer_peek_line(data->parser_buff, beginningOfChunk, sizeof(beginningOfChunk));
 
 				if (ret2 == -1)
 					send_error(500, "Internal server error", (char*) 0, "Unexpected body format");
-					
-			
+
+
 				if (ret2 > 0) {
 					if (sscanf(beginningOfChunk, "%9s\r\n", hex) != 1)
 						send_error(500, "Internal server error", (char*) 0, "Unexpected body format");
-				
+
 					parser_data->chunk_size = parser_data->chunk_bytes = strtol(hex, (char**)0, 16);
 					buffer_read_data(data->parser_buff, aux, ret2);
 
@@ -252,7 +272,7 @@ int read_unchunked(void * origin_data, char * dest_buff, int size) {
 				}
 			}
 
-			int bytes_to_read = size > parser_data->chunk_bytes ? parser_data->chunk_bytes : size;	
+			int bytes_to_read = size > parser_data->chunk_bytes ? parser_data->chunk_bytes : size;
 			int retAux = buffer_read_data(data->parser_buff, dest_buff + ret, bytes_to_read);
 
 			size -= retAux;
@@ -284,12 +304,12 @@ void proxy_origin_active_socket_block(struct selector_key *key) {
 }
 
 void proxy_origin_active_socket_close(struct selector_key *key) {
-	proxy_origin_active_socket_data * data = key->data;
-	if (data->closed == 1)
-		return;
-	data->closed = 1;
-	selector_unregister_fd(key->s, data->client_fd);
-	buffer_free(data->write_buff);
-	free(data);
-	close(key->fd);
+	/*proxy_origin_active_socket_data * data = key->data;
+	   if (data->closed == 1)
+	        return;
+	   data->closed = 1;
+	   selector_unregister_fd(key->s, data->client_fd);
+	   buffer_free(data->write_buff);
+	   free(data);
+	   close(key->fd);*/
 }

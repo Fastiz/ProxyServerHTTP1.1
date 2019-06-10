@@ -320,7 +320,7 @@ static void process_ssl (struct selector_key *key) {
 
 void proxy_client_active_socket_write(struct selector_key *key) {
 	proxy_client_active_socket_data * data = key->data;
-	
+
 	char aux[1000];
 	int ret;
 	while ((ret = buffer_read_data(data->read_buff, aux, sizeof(aux))) > 0) {
@@ -399,7 +399,8 @@ void proxy_client_active_socket_block(struct selector_key *key) {
 		DieWithSystemMessage("setting origin server flags failed");
 	}
 
-	void * originData = proxy_origin_active_socket_data_init(key->s, key->fd, data->origin_fd, data, data->write_buff, data->read_buff);
+	int ssl = data->ssl == NO_SSL ? 0 : 1;
+	void * originData = proxy_origin_active_socket_data_init(key->s, ssl, key->fd, data->origin_fd, data, data->write_buff, data->read_buff);
 
 	if (data->ssl == SSL_CONNECTING) {
 		buffer_reset_peek_line(data->write_buff);
