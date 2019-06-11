@@ -3,13 +3,16 @@
 
 #include "selector.h"
 #include "buffer.h"
+#include "connectionData.h"
 
-void * proxy_transformation_data_init(fd_selector s, void * client_data, void * origin_data, int client_fd, int origin_fd);
+void * proxy_transformation_data_init(connection_data * connection_data);
 
 void proxy_transformation_read(struct selector_key *key);
 
 void proxy_transformation_write(struct selector_key *key);
 
 void proxy_transformation_close(struct selector_key *key);
+
+void kill_transformation(connection_data * connection_data);
 
 #endif //PROXYTRANSFORMATION_H

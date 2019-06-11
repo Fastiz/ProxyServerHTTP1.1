@@ -4,8 +4,8 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <string.h>
-#include "include/proxyOriginActiveSocket.h"
 #include "include/helpers.h"
+#include "include/proxyOriginActiveSocket.h"
 #include "include/proxyTransformation.h"
 
 static fd_handler fd = {
@@ -18,8 +18,6 @@ static fd_handler fd = {
 fd_handler * proxy_origin_active_socket_fd_handler(void){
 	return &fd;
 }
-
-#define CHUNK_SIZE 100
 
 enum parser_states {
 	READING_HEADER,
@@ -39,60 +37,57 @@ typedef struct {
  *  Contains buffers and client data
  */
 typedef struct {
-	int client_fd;
-	int transformation_fd;
-	void * client_data;
-	int ssl;
+	connection_data * connection_data;
 	buffer * read_buff;
 	buffer * write_buff;
 	buffer * parser_buff;
 	parser_data * parser_data;
-	int closed;
 } proxy_origin_active_socket_data;
 
 void parse_content(proxy_origin_active_socket_data * data, struct selector_key * key);
 
-void reset_origin_data(fd_selector s, void * origin_data, int origin_fd) {
-	proxy_origin_active_socket_data * data = origin_data;
+void reset_origin_data(connection_data * connection_data) {
+	proxy_origin_active_socket_data * data = connection_data->origin_data;
 	parser_data * parser_data = data->parser_data;
+
 	buffer_clean(data->parser_buff);
 	parser_data->contentLength = -1;
 	parser_data->chunk_size = -1;
 	parser_data->chunk_bytes = -1;
 	parser_data->responseHasFinished = 0;
 
-	if (data->ssl == 1) {
+	//kill_transformation(connection_data);
+
+	if (connection_data->ssl == 1) {
 		parser_data->state = SSL_CONNECTION;
+		connection_data->transformation_data = NULL;
 	} else {
 		parser_data->state = READING_HEADER;
-		proxy_transformation_data_init(s, data->client_data, data, data->client_fd, origin_fd);
+		//connection_data->transformation_data = proxy_transformation_data_init(connection_data);
 	}
 }
 
-void * proxy_origin_active_socket_data_init(fd_selector s, int ssl, int client_fd, int origin_fd, void * client_data, buffer * read, buffer * write) {
+void * proxy_origin_active_socket_data_init(connection_data * connection_data, buffer * read, buffer * write) {
 	proxy_origin_active_socket_data * data = malloc(sizeof(proxy_origin_active_socket_data));
-	data->client_fd = client_fd;
-	data->client_data = client_data;
-	data->transformation_fd = -1;
-	data->ssl = ssl;
 	data->read_buff = read;
 	data->write_buff = write;
 	data->parser_buff = new_buffer();
-	data->closed = 0;
 	data->parser_data = malloc(sizeof(parser_data));
-	reset_origin_data(s, data, origin_fd);
+
+	data->connection_data = connection_data;
+	connection_data->origin_data = data;
+	connection_data->origin_transformation_fd = -1;
+	connection_data->transformation_data = NULL;
+	reset_origin_data(connection_data);
 
 	return data;
 }
 
-void set_origin_transformation_fd(void * origin_data, int fd) {
-	proxy_origin_active_socket_data * data = origin_data;
-	data->transformation_fd = fd;
-}
-
 void proxy_origin_active_socket_write(struct selector_key *key){
 	proxy_origin_active_socket_data * data = key->data;
-	int client_fd = data->client_fd;
+	connection_data * connection_data = data->connection_data;
+
+	int client_fd = connection_data->client_fd;
 
 	char aux[1000];
 	int ret;
@@ -107,7 +102,9 @@ void proxy_origin_active_socket_write(struct selector_key *key){
 
 void proxy_origin_active_socket_read(struct selector_key *key) {
 	proxy_origin_active_socket_data * data = key->data;
-	int client_fd = data->client_fd;
+	connection_data * connection_data = data->connection_data;
+
+	int client_fd = connection_data->client_fd;
 	int origin_fd = key->fd;
 
 	char aux[1000];
@@ -123,7 +120,7 @@ void proxy_origin_active_socket_read(struct selector_key *key) {
 		ret = recv(origin_fd, aux, bytes_to_send, 0);
 		/* reset the connection if necessary */
 		if (ret > 0 && response_has_finished(data) == 1)
-			reset_origin_data(key->s, data, key->fd);		
+			reset_origin_data(connection_data);		
 		buffer_write_data(data->parser_buff, aux, ret);
 	} while (ret > 0);
 
@@ -131,23 +128,30 @@ void proxy_origin_active_socket_read(struct selector_key *key) {
 
 	if (ret == 0) {
 		/* Connection was closed */
+		if (connection_data->origin_transformation_fd == -1) {
+			connection_data->state = CLOSED;
+			kill_origin(connection_data);
+		} else {		
+			printf("mate al cliente\n");
+			connection_data->state = TRANSFORMER_MUST_CLOSE;
+		}
 		selector_unregister_fd(key->s, key->fd);
-		return;
 	}
 }
 
 int available_response_bytes(void * origin_data) {
 	proxy_origin_active_socket_data * data = origin_data;
 	parser_data * parser_data = data->parser_data;
-	//if (parser_data->state == READING_HEADER) {
+	//Esto es... polemico
 	int ret = buffer_space(data->write_buff) > buffer_space(data->parser_buff) ? buffer_space(data->parser_buff) : buffer_space(data->write_buff);
 	/* The response will likely get longer due to the chunked encoding */
 	return (ret - 80) > 0 ? ret - 80 : 0;
-	//}
 }
 
 void parse_content(proxy_origin_active_socket_data * data, struct selector_key * key) {
 	parser_data * parser_data = data->parser_data;
+	connection_data * connection_data = data->connection_data;
+
 	char aux[1000];
 	int ret;
 
@@ -175,11 +179,11 @@ void parse_content(proxy_origin_active_socket_data * data, struct selector_key *
 			}
 		}
 
-		selector_set_interest(key->s, data->client_fd, OP_WRITE);
+		selector_set_interest(key->s, connection_data->client_fd, OP_WRITE);
 	}
 
 	if (parser_data->state == READING_BODY) {
-		if (data->transformation_fd == -1) {
+		if (connection_data->origin_transformation_fd == -1) {
 			while ((ret = read_unchunked(data, aux, sizeof(aux))) > 0) {
 				//buffer_write_data(data->write_buff, aux, ret);
 				write_chunked(data, aux, ret);
@@ -190,9 +194,9 @@ void parse_content(proxy_origin_active_socket_data * data, struct selector_key *
 				write_chunked(data, "", 0);
 			}
 
-			selector_set_interest(key->s, data->client_fd, OP_WRITE);
+			selector_set_interest(key->s, connection_data->client_fd, OP_WRITE);
 		} else {
-			selector_set_interest(key->s, data->transformation_fd, OP_WRITE);
+			selector_set_interest(key->s, connection_data->origin_transformation_fd, OP_WRITE);
 		}
 	}
 
@@ -201,7 +205,7 @@ void parse_content(proxy_origin_active_socket_data * data, struct selector_key *
 			buffer_write_data(data->write_buff, aux, ret);
 		}
 
-		selector_set_interest(key->s, data->client_fd, OP_WRITE);
+		selector_set_interest(key->s, connection_data->client_fd, OP_WRITE);
 	}
 }
 
@@ -302,12 +306,23 @@ void proxy_origin_active_socket_block(struct selector_key *key) {
 }
 
 void proxy_origin_active_socket_close(struct selector_key *key) {
-	/*proxy_origin_active_socket_data * data = key->data;
-	   if (data->closed == 1)
-	        return;
-	   data->closed = 1;
-	   selector_unregister_fd(key->s, data->client_fd);
-	   buffer_free(data->write_buff);
-	   free(data);
-	   close(key->fd);*/
+	close(key->fd);
+}
+
+void kill_origin(connection_data * connection_data) {
+	/*proxy_origin_active_socket_data * data = connection_data->origin_data;
+
+	if (data == NULL)
+		return;
+
+	free(data->parser_data);
+	free(data->parser_buff);
+	kill_transformation(connection_data);
+
+	if (connection_data->state == ALIVE)
+		selector_unregister_fd(connection_data->s, connection_data->origin_fd);
+	
+	free(data);
+	connection_data->origin_data = NULL;
+	connection_data->origin_fd = -1;*/
 }

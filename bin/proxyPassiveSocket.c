@@ -39,7 +39,7 @@ void proxy_passive_socket_read(struct selector_key *key) {
 		DieWithSystemMessage("setting client flags failed");
 	}
 
-	void * clientData = proxy_client_active_socket_data_init();
+	void * clientData = proxy_client_active_socket_data_init(key->s, clientSocket);
 
 	/* clientSocket is connected to a client */
 	if(SELECTOR_SUCCESS != selector_register(key->s, clientSocket, proxy_client_active_socket_fd_handler(),

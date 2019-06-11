@@ -3,14 +3,13 @@
 
 #include "selector.h"
 #include "buffer.h"
+#include "connectionData.h"
 
 #define MAX_BUFF_SIZE 1024
 
 fd_handler * proxy_origin_active_socket_fd_handler(void);
 
-void * proxy_origin_active_socket_data_init(fd_selector s, int ssl, int client_fd, int origin_fd, void * client_data, buffer * read, buffer * write);
-
-void set_origin_transformation_fd(void * origin_data, int fd);
+void * proxy_origin_active_socket_data_init(connection_data * connection_data, buffer * read, buffer * write);
 
 int read_unchunked(void * origin_data, char * dest_buff, int size);
 
@@ -27,5 +26,7 @@ void proxy_origin_active_socket_write(struct selector_key *key);
 void proxy_origin_active_socket_block(struct selector_key *key);
 
 void proxy_origin_active_socket_close(struct selector_key *key);
+
+void kill_origin(connection_data * connection_data);
 
 #endif //PROXYORIGINACTIVESOCKET_H

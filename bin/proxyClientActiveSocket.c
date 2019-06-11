@@ -10,6 +10,7 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 #include <ctype.h>
+#include "include/buffer.h"
 #include "include/selector.h"
 #include "include/helpers.h"
 #include "include/proxyPassiveSocket.h"
@@ -73,43 +74,45 @@ enum ssl_states {
  *  Contains buffers and connection data
  */
 typedef struct proxy_client_active_socket_data{
-    int origin_fd;
-	int transformation_fd;
+	connection_data * connection_data;
     char* hostname;
     unsigned short port;
-	buffer * header_buff;
     buffer * write_buff;
     buffer * read_buff;
     enum client_states state;
 	enum ssl_states ssl;
-	int closed;
 } proxy_client_active_socket_data;
 
 
-static void * open_origin_socket(void * clientData);
+static void * open_origin_socket(void * client_key);
 static void process_ssl (struct selector_key *key);
 
-void * proxy_client_active_socket_data_init() {
+void * proxy_client_active_socket_data_init(fd_selector s, int client_fd) {
 	proxy_client_active_socket_data * data = malloc(sizeof(proxy_client_active_socket_data));
-	data->origin_fd = -1;
-	data->transformation_fd = -1;
 	data->state = READING_HEADER_FIRST_LINE;
-	data->write_buff = new_buffer();
 	data->read_buff = new_buffer();
-	data->closed = 0;
-	return data;
-}
+	data->write_buff = new_buffer();
+	
+	connection_data * conn_data = malloc(sizeof(connection_data));
+	data->connection_data = conn_data;
+	conn_data->s = s;
+	conn_data->client_fd = client_fd;
+	conn_data->client_data = data;
+	conn_data->origin_fd = -1;
+	conn_data->origin_data = NULL;
+	conn_data->client_transformation_fd = -1;
+	conn_data->transformation_data = NULL;
+	conn_data->state = ALIVE;
 
-void set_client_transformation_fd(void * client_data, int fd) {
-	proxy_client_active_socket_data * data = client_data;
-	data->transformation_fd = fd;
+	return data;
 }
 
 void proxy_client_active_socket_read(struct selector_key *key) {
 	proxy_client_active_socket_data * data = key->data;
+	connection_data * connection_data = data->connection_data;
 
-	int client_fd = key->fd;
-	int origin_fd = data->origin_fd;
+	int client_fd = connection_data->client_fd;
+	int origin_fd = connection_data->origin_fd;
 
 	if (data->state == READING_HEADER_FIRST_LINE){
 		char aux[1000];
@@ -124,7 +127,7 @@ void proxy_client_active_socket_read(struct selector_key *key) {
 
 		if (ret == 0) {
 			/* Connection was closed */
-			selector_unregister_fd(key->s, key->fd);
+			kill_client(connection_data);
 			return;
 		}
 
@@ -209,7 +212,7 @@ void proxy_client_active_socket_read(struct selector_key *key) {
         }
         if (ret == 0) {
             /* Connection was closed */
-            selector_unregister_fd(key->s, key->fd);
+            kill_client(connection_data);
             return;
         }
 
@@ -289,7 +292,7 @@ void proxy_client_active_socket_read(struct selector_key *key) {
 
 		if (ret == 0) {
 			/* Connection was closed */
-			selector_unregister_fd(key->s, key->fd);
+			kill_client(connection_data);
 			return;
 		}
 
@@ -320,6 +323,7 @@ static void process_ssl (struct selector_key *key) {
 
 void proxy_client_active_socket_write(struct selector_key *key) {
 	proxy_client_active_socket_data * data = key->data;
+	connection_data * connection_data = data->connection_data;
 
 	char aux[1000];
 	int ret;
@@ -328,18 +332,24 @@ void proxy_client_active_socket_write(struct selector_key *key) {
 		send(key->fd, aux, ret, 0);
 	}
 
+	if(connection_data->state == CLOSED) {
+		kill_client(connection_data);
+	}
+
 	selector_set_interest_key(key, OP_READ);
 
-	if (data->transformation_fd == -1) {
-		selector_set_interest(key->s, data->origin_fd, OP_READ);
+	if (connection_data->client_transformation_fd == -1) {
+		selector_set_interest(key->s, connection_data->origin_fd, OP_READ);
 	} else {
-		selector_set_interest(key->s, data->transformation_fd, OP_READ);
+		selector_set_interest(key->s, connection_data->client_transformation_fd, OP_READ);
 	}
 }
 
-static void * open_origin_socket(void * clientKey) {
-	struct selector_key * key = clientKey;
+static void * open_origin_socket(void * client_key) {
+	struct selector_key * key = client_key;
 	proxy_client_active_socket_data * data = key->data;
+	connection_data * connection_data = data->connection_data;
+
 	int sockfd;
 	char portString[MAX_PORTSTRING_SIZE];
 	sprintf(portString, "%d", data->port);
@@ -383,7 +393,7 @@ static void * open_origin_socket(void * clientKey) {
 	if (connectRet < 0)
 		send_error( 503, "Service Unavailable", (char*) 0, "Connection refused." );
 	else
-		data->origin_fd = sockfd;
+		connection_data->origin_fd = sockfd;
 
 	selector_notify_block(key->s, key->fd);
 
@@ -392,34 +402,39 @@ static void * open_origin_socket(void * clientKey) {
 
 void proxy_client_active_socket_block(struct selector_key *key) {
 	proxy_client_active_socket_data * data = key->data;
+	connection_data * connection_data = data->connection_data;
+
 	data->state = PASSING_CONTENT;
 	selector_set_interest_key(key, OP_READ);
 
-	if(selector_fd_set_nio(data->origin_fd) == -1) {
+	if(selector_fd_set_nio(connection_data->origin_fd) == -1) {
 		DieWithSystemMessage("setting origin server flags failed");
 	}
 
-	int ssl = data->ssl == NO_SSL ? 0 : 1;
-	void * originData = proxy_origin_active_socket_data_init(key->s, ssl, key->fd, data->origin_fd, data, data->write_buff, data->read_buff);
+	int ssl = connection_data->ssl == NO_SSL ? 0 : 1;
+	void * origin_data = proxy_origin_active_socket_data_init(connection_data, data->write_buff, data->read_buff);
+	connection_data->origin_data = origin_data;
 
 	if (data->ssl == SSL_CONNECTING) {
 		buffer_reset_peek_line(data->write_buff);
 		process_ssl(key);
 	}
 
-	if(SELECTOR_SUCCESS != selector_register(key->s, data->origin_fd, proxy_origin_active_socket_fd_handler(),
-	                                         OP_WRITE, originData)) {
+	if(SELECTOR_SUCCESS != selector_register(key->s, connection_data->origin_fd, proxy_origin_active_socket_fd_handler(),
+	                                         OP_WRITE, origin_data)) {
 		DieWithSystemMessage("registering fd failed");
 	}
 }
 
 void proxy_client_active_socket_close(struct selector_key *key) {
-	proxy_client_active_socket_data * data = key->data;
-	if (data->closed == 1)
-		return;
-	data->closed = 1;
-	selector_unregister_fd(key->s, data->origin_fd);
-	buffer_free(data->write_buff);
-	free(data);
 	close(key->fd);
+}
+
+void kill_client(connection_data * connection_data) {
+	/*proxy_client_active_socket_data * data = connection_data->client_data;
+	buffer_free(data->write_buff);
+	buffer_free(data->read_buff);
+	kill_origin(connection_data->origin_data);*/
+	selector_unregister_fd(connection_data->s, connection_data->client_fd);
+	/*free(data);*/
 }
