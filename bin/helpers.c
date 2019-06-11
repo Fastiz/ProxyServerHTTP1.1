@@ -6,8 +6,8 @@
 #include "include/helpers.h"
 #include "include/proxyClientActiveSocket.h"
 
-#define SERVER_NAME "micro_proxy"
-#define SERVER_URL "http://www.acme.com/software/micro_proxy/"
+#define SERVER_NAME "Detoxy"
+#define SERVER_URL "http://www.detoxy.com/"
 #define PROTOCOL "HTTP/1.0"
 #define RFC1123FMT "%a, %d %b %Y %H:%M:%S GMT"
 #define TIMEOUT 300
@@ -71,6 +71,8 @@ void send_error(int status, char* title, char* extra_header, char* text, connect
 </html>\n",
 	       SERVER_URL, SERVER_NAME);
 	fflush(stdout);
+
+	printf("%s\n", text);
 
 	kill_client(connection_data);
 }

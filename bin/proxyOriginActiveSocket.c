@@ -100,6 +100,8 @@ void proxy_origin_active_socket_write(struct selector_key *key){
 	selector_set_interest(key->s, client_fd, OP_READ);
 }
 
+int i = 0;
+
 void proxy_origin_active_socket_read(struct selector_key *key) {
 	proxy_origin_active_socket_data * data = key->data;
 	connection_data * connection_data = data->connection_data;
@@ -118,9 +120,10 @@ void proxy_origin_active_socket_read(struct selector_key *key) {
 			break;
 		}
 		ret = recv(origin_fd, aux, bytes_to_send, 0);
-		/* reset the connection if necessary */
+		/* Reset the connection if necessary */
 		if (ret > 0 && response_has_finished(data) == 1)
 			reset_origin_data(connection_data);
+		
 		buffer_write_data(data->parser_buff, aux, ret);
 	} while (ret > 0);
 
@@ -184,7 +187,6 @@ void parse_content(proxy_origin_active_socket_data * data, struct selector_key *
 	if (parser_data->state == READING_BODY) {
 		if (connection_data->origin_transformation_fd == -1) {
 			while ((ret = read_unchunked(data, aux, sizeof(aux))) > 0) {
-				//buffer_write_data(data->write_buff, aux, ret);
 				write_chunked(data, aux, ret);
 			}
 
@@ -244,16 +246,16 @@ int read_unchunked(void * origin_data, char * dest_buff, int size) {
 				if (ret1 == -1)
 					return -1;
 
-				if (ret1 > 0)
-					if (strcmp(endOfChunk, "\r\n") != 0) {
+				if (ret1 > 0) {
+					if (strcmp(endOfChunk, "\r\n") != 0)
 						return -1;
 
-						buffer_read_data(data->parser_buff, aux, ret1);
-						parser_data->chunk_bytes = -1;
+					buffer_read_data(data->parser_buff, aux, ret1);
+					parser_data->chunk_bytes = -1;
 
-						if(parser_data->chunk_size == 0)
-							parser_data->responseHasFinished = 1;
-					}
+					if(parser_data->chunk_size == 0)
+						parser_data->responseHasFinished = 1;
+				}
 			}
 
 			if (parser_data->chunk_bytes == -1) {
@@ -264,7 +266,6 @@ int read_unchunked(void * origin_data, char * dest_buff, int size) {
 
 				if (ret2 == -1)
 					return -1;
-
 
 				if (ret2 > 0) {
 					if (sscanf(beginningOfChunk, "%9s\r\n", hex) != 1)

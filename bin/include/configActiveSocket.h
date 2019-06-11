@@ -5,7 +5,7 @@
 #ifndef CONFIGACTIVESOCKET_H
 #define CONFIGACTIVESOCKET_H
 
-#include "fd_handler.h"
+#include "selector.h"
 
 fd_handler config_active_socket_fd_handler_init(void);
 
