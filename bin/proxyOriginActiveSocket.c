@@ -120,7 +120,7 @@ void proxy_origin_active_socket_read(struct selector_key *key) {
 		ret = recv(origin_fd, aux, bytes_to_send, 0);
 		/* reset the connection if necessary */
 		if (ret > 0 && response_has_finished(data) == 1)
-			reset_origin_data(connection_data);		
+			reset_origin_data(connection_data);
 		buffer_write_data(data->parser_buff, aux, ret);
 	} while (ret > 0);
 
@@ -188,6 +188,11 @@ void parse_content(proxy_origin_active_socket_data * data, struct selector_key *
 				write_chunked(data, aux, ret);
 			}
 
+			if (ret == -1) {            /* Error */
+				send_error(500, "Internal server error", (char*) 0, "Unexpected body format", data->connection_data);
+				return;
+			}
+
 			if (response_has_finished(data) == 1) {
 				/* Write a 0-byte chunk to indicate end of body */
 				write_chunked(data, "", 0);
@@ -237,18 +242,18 @@ int read_unchunked(void * origin_data, char * dest_buff, int size) {
 				ret1 = buffer_peek_line(data->parser_buff, endOfChunk, sizeof(endOfChunk));
 
 				if (ret1 == -1)
-					send_error(500, "Internal server error", (char*) 0, "Unexpected body format");
+					return -1;
 
-				if (ret1 > 0) {
-					if (strcmp(endOfChunk, "\r\n") != 0)
-						send_error(500, "Internal server error", (char*) 0, "Unexpected body format");
+				if (ret1 > 0)
+					if (strcmp(endOfChunk, "\r\n") != 0) {
+						return -1;
 
-					buffer_read_data(data->parser_buff, aux, ret1);
-					parser_data->chunk_bytes = -1;
+						buffer_read_data(data->parser_buff, aux, ret1);
+						parser_data->chunk_bytes = -1;
 
-					if(parser_data->chunk_size == 0)
-						parser_data->responseHasFinished = 1;
-				}
+						if(parser_data->chunk_size == 0)
+							parser_data->responseHasFinished = 1;
+					}
 			}
 
 			if (parser_data->chunk_bytes == -1) {
@@ -258,12 +263,12 @@ int read_unchunked(void * origin_data, char * dest_buff, int size) {
 				ret2 = buffer_peek_line(data->parser_buff, beginningOfChunk, sizeof(beginningOfChunk));
 
 				if (ret2 == -1)
-					send_error(500, "Internal server error", (char*) 0, "Unexpected body format");
+					return -1;
 
 
 				if (ret2 > 0) {
 					if (sscanf(beginningOfChunk, "%9s\r\n", hex) != 1)
-						send_error(500, "Internal server error", (char*) 0, "Unexpected body format");
+						return -1;
 
 					parser_data->chunk_size = parser_data->chunk_bytes = strtol(hex, (char**)0, 16);
 					buffer_read_data(data->parser_buff, aux, ret2);
@@ -320,7 +325,7 @@ void kill_origin(connection_data * connection_data) {
 
 	if (connection_data->state == ALIVE)
 		selector_unregister_fd(connection_data->s, connection_data->origin_fd);
-	
+
 	free(data);
 	connection_data->origin_data = NULL;
 	connection_data->origin_fd = -1;

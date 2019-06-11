@@ -35,10 +35,10 @@ void * proxy_transformation_data_init(connection_data * connection_data) {
 	connection_data->client_transformation_fd = data->client_pipe[READ];
 	connection_data->origin_transformation_fd = data->origin_pipe[WRITE];
 
-	char * args[] = {"sed", "s/Sample/Ejemplo/g", NULL};
+	char * args[] = {"sed", "s/ACME/ITBA/g", NULL};
 	pid_t pid = fork();
 	if (pid < 0) {
-		send_error(500, "Internal server error", (char*) 0, "Coudn't execute transformation");
+		send_error(500, "Internal server error", (char*) 0, "Coudn't execute transformation", connection_data);
 	}
 
 	if (pid == 0) {
@@ -118,6 +118,11 @@ void proxy_transformation_write(struct selector_key *key) {
 		write(data->origin_pipe[WRITE], aux, ret);
 	}
 
+	if (ret == -1) {     /* Error */
+		send_error(500, "Internal server error", (char*) 0, "Unexpected body format", data->connection_data);
+		return;
+	}
+
 	if (response_has_finished(connection_data->origin_data) == 1) {
 		data->origin_pipe[WRITE] = -1;
 		selector_unregister_fd(key->s, key->fd);
@@ -136,7 +141,7 @@ void kill_transformation(connection_data * connection_data) {
 
 	if (data == NULL)
 		return;
-	
+
 	if (data->client_pipe[READ] != -1)
 		selector_unregister_fd(connection_data->s, data->client_pipe[READ]);
 	if (data->client_pipe[WRITE] != -1)
@@ -147,7 +152,7 @@ void kill_transformation(connection_data * connection_data) {
 		selector_unregister_fd(connection_data->s, data->origin_pipe[WRITE]);
 
 	//Y que hago con el proceso?
-	
+
 	free(data);
 	connection_data->transformation_data = NULL;
 	connection_data->client_transformation_fd = -1;

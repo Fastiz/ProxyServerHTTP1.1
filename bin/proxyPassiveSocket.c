@@ -25,7 +25,7 @@ fd_handler * proxy_passive_socket_fd_handler(void){
 }
 
 void proxy_passive_socket_read(struct selector_key *key) {
-	struct sockaddr_in clntAddr;	// Client address
+	struct sockaddr_in clntAddr;        // Client address
 
 	/* Set length of client address structure (in-out parameter) */
 	socklen_t clntAddrLen = sizeof(clntAddr);
