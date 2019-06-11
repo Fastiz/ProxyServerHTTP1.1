@@ -56,14 +56,14 @@ void reset_origin_data(connection_data * connection_data) {
 	parser_data->chunk_bytes = -1;
 	parser_data->responseHasFinished = 0;
 
-	//kill_transformation(connection_data);
+	kill_transformation(connection_data);
 
 	if (connection_data->ssl == 1) {
 		parser_data->state = SSL_CONNECTION;
 		connection_data->transformation_data = NULL;
 	} else {
 		parser_data->state = READING_HEADER;
-		//connection_data->transformation_data = proxy_transformation_data_init(connection_data);
+		connection_data->transformation_data = proxy_transformation_data_init(connection_data);
 	}
 }
 
@@ -131,8 +131,7 @@ void proxy_origin_active_socket_read(struct selector_key *key) {
 		if (connection_data->origin_transformation_fd == -1) {
 			connection_data->state = CLOSED;
 			kill_origin(connection_data);
-		} else {		
-			printf("mate al cliente\n");
+		} else {
 			connection_data->state = TRANSFORMER_MUST_CLOSE;
 		}
 		selector_unregister_fd(key->s, key->fd);
@@ -310,7 +309,7 @@ void proxy_origin_active_socket_close(struct selector_key *key) {
 }
 
 void kill_origin(connection_data * connection_data) {
-	/*proxy_origin_active_socket_data * data = connection_data->origin_data;
+	proxy_origin_active_socket_data * data = connection_data->origin_data;
 
 	if (data == NULL)
 		return;
@@ -324,5 +323,5 @@ void kill_origin(connection_data * connection_data) {
 	
 	free(data);
 	connection_data->origin_data = NULL;
-	connection_data->origin_fd = -1;*/
+	connection_data->origin_fd = -1;
 }

@@ -35,7 +35,7 @@ void * proxy_transformation_data_init(connection_data * connection_data) {
 	connection_data->client_transformation_fd = data->client_pipe[READ];
 	connection_data->origin_transformation_fd = data->origin_pipe[WRITE];
 
-	char * args[] = {"sed", "s/Herramientas/Tools/g", NULL};
+	char * args[] = {"sed", "s/Sample/Ejemplo/g", NULL};
 	pid_t pid = fork();
 	if (pid < 0) {
 		send_error(500, "Internal server error", (char*) 0, "Coudn't execute transformation");
@@ -96,11 +96,12 @@ void proxy_transformation_read(struct selector_key *key) {
 		/* Connection was closed. End of response. */
 		write_chunked(connection_data->origin_data, "", 0);
 		data->client_pipe[READ] = -1;
+		selector_unregister_fd(key->s, key->fd);
 		if (connection_data->state == TRANSFORMER_MUST_CLOSE) {
 			kill_origin(connection_data);
 			connection_data->state = CLOSED;
 		} else
-			kill_transformation(connection_data);
+			selector_unregister_fd(key->s, key->fd);
 	}
 
 	selector_set_interest(key->s, connection_data->client_fd, OP_WRITE);
@@ -131,7 +132,7 @@ void proxy_transformation_close(struct selector_key *key) {
 }
 
 void kill_transformation(connection_data * connection_data) {
-	/*proxy_transformation_data * data = connection_data->transformation_data;
+	proxy_transformation_data * data = connection_data->transformation_data;
 
 	if (data == NULL)
 		return;
@@ -150,5 +151,5 @@ void kill_transformation(connection_data * connection_data) {
 	free(data);
 	connection_data->transformation_data = NULL;
 	connection_data->client_transformation_fd = -1;
-	connection_data->origin_transformation_fd = -1;*/
+	connection_data->origin_transformation_fd = -1;
 }

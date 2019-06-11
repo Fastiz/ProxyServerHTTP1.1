@@ -411,7 +411,7 @@ void proxy_client_active_socket_block(struct selector_key *key) {
 		DieWithSystemMessage("setting origin server flags failed");
 	}
 
-	int ssl = connection_data->ssl == NO_SSL ? 0 : 1;
+	connection_data->ssl = data->ssl == NO_SSL ? 0 : 1;
 	void * origin_data = proxy_origin_active_socket_data_init(connection_data, data->write_buff, data->read_buff);
 	connection_data->origin_data = origin_data;
 
@@ -431,10 +431,10 @@ void proxy_client_active_socket_close(struct selector_key *key) {
 }
 
 void kill_client(connection_data * connection_data) {
-	/*proxy_client_active_socket_data * data = connection_data->client_data;
+	proxy_client_active_socket_data * data = connection_data->client_data;
 	buffer_free(data->write_buff);
 	buffer_free(data->read_buff);
-	kill_origin(connection_data->origin_data);*/
+	kill_origin(connection_data);
 	selector_unregister_fd(connection_data->s, connection_data->client_fd);
-	/*free(data);*/
+	free(data);
 }
