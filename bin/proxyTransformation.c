@@ -35,7 +35,7 @@ void * proxy_transformation_data_init(connection_data * connection_data) {
 	connection_data->client_transformation_fd = data->client_pipe[READ];
 	connection_data->origin_transformation_fd = data->origin_pipe[WRITE];
 
-	char * args[] = {"sed", "s/ACME/ITBA/g", NULL};
+	char * args[] = {"sed", "s/ITBA/ACME/", NULL};
 	pid_t pid = fork();
 	if (pid < 0) {
 		send_error(500, "Internal server error", (char*) 0, "Coudn't execute transformation", connection_data);
@@ -75,13 +75,12 @@ void * proxy_transformation_data_init(connection_data * connection_data) {
 void proxy_transformation_read(struct selector_key *key) {
 	proxy_transformation_data * data = key->data;
 	connection_data * connection_data = data->connection_data;
-
 	char aux[1000];
 	int ret = -1;
 	int bytes_to_send;
 
 	do {
-		bytes_to_send = sizeof(aux) > available_response_bytes(connection_data->origin_data) ? available_response_bytes(connection_data->origin_data) : sizeof(aux);
+		bytes_to_send = sizeof(aux) > available_write_bytes(connection_data->origin_data) ? available_write_bytes(connection_data->origin_data) : sizeof(aux);
 		if (bytes_to_send == 0) {
 			/* Buffer full. Must wait for the client to read it */
 			selector_set_interest_key(key, OP_NOOP);
@@ -101,7 +100,7 @@ void proxy_transformation_read(struct selector_key *key) {
 			kill_origin(connection_data);
 			connection_data->state = CLOSED;
 		} else
-			selector_unregister_fd(key->s, key->fd);
+			kill_transformation(connection_data);
 	}
 
 	selector_set_interest(key->s, connection_data->client_fd, OP_WRITE);

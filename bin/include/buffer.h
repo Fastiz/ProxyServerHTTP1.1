@@ -3,7 +3,7 @@
 
 #include <stdlib.h>
 
-#define BUFFER_SIZE 10000
+#define BUFFER_SIZE 8000
 
 typedef struct buffer {
     char data[BUFFER_SIZE];

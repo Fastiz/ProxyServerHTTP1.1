@@ -15,7 +15,9 @@ int read_unchunked(void * origin_data, char * dest_buff, int size);
 
 void write_chunked(void * origin_data, char * data_buff, int size);
 
-int available_response_bytes(void * origin_data);
+int available_parser_bytes(void * origin_data);
+
+int available_write_bytes(void * origin_data);
 
 int response_has_finished(void * origin_data);
 

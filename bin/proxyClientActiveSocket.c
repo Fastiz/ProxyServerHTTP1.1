@@ -123,9 +123,6 @@ void proxy_client_active_socket_read(struct selector_key *key) {
 			buffer_write_data(data->write_buff, aux, ret);
 		}
 
-		data->state = SEARCHING_FOR_HEADER_HOST;
-		ret = -2;
-
 		if (ret == 0) {
 			/* Connection was closed */
 			kill_client(connection_data);
@@ -398,8 +395,7 @@ static void * open_origin_socket(void * client_key) {
 	for (struct addrinfo *addr = addrList; addr != NULL; addr = addr->ai_next) {
 		sockfd = socket( addr->ai_family, addr->ai_socktype, addr->ai_protocol );
 		if (sockfd < 0) {
-			send_error(500, "Internal Error", (char*) 0, "Couldn't create socket.", connection_data);
-			return 0;
+			continue;
 		}
 		if ((connectRet = connect(sockfd, addr->ai_addr, addr->ai_addrlen)) < 0) {
 			close(sockfd);

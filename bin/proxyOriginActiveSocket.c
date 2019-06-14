@@ -112,8 +112,9 @@ void proxy_origin_active_socket_read(struct selector_key *key) {
 	char aux[1000];
 	int ret = -1;
 	int bytes_to_send;
+	int dataToParse = 0;
 	do {
-		bytes_to_send = sizeof(aux) > available_response_bytes(data) ? available_response_bytes(data) : sizeof(aux);
+		bytes_to_send = sizeof(aux) > available_parser_bytes(data) ? available_parser_bytes(data) : sizeof(aux);
 		if (bytes_to_send == 0) {
 			/* Buffer full. Must wait for the client/transformer to read it */
 			selector_set_interest_key(key, OP_NOOP);
@@ -121,31 +122,46 @@ void proxy_origin_active_socket_read(struct selector_key *key) {
 		}
 		ret = recv(origin_fd, aux, bytes_to_send, 0);
 		/* Reset the connection if necessary */
-		if (ret > 0 && response_has_finished(data) == 1)
-			reset_origin_data(connection_data);
+		if (ret > 0) {
+			dataToParse = 1;
+			if (response_has_finished(data) == 1)
+				reset_origin_data(connection_data);
+		}
 		
 		buffer_write_data(data->parser_buff, aux, ret);
 	} while (ret > 0);
 
-	parse_content(data, key);
+	if (dataToParse == 1)
+		parse_content(data, key);
 
 	if (ret == 0) {
 		/* Connection was closed */
 		if (connection_data->origin_transformation_fd == -1) {
 			connection_data->state = CLOSED;
 			kill_origin(connection_data);
+			selector_set_interest(key->s, connection_data->client_fd, OP_WRITE);
 		} else {
+			/* Make sure the transformation gets to know that the origin server has closed */
+			data->parser_data->responseHasFinished = 1;
+			selector_set_interest(key->s, connection_data->origin_transformation_fd, OP_WRITE);
 			connection_data->state = TRANSFORMER_MUST_CLOSE;
 		}
 		selector_unregister_fd(key->s, key->fd);
 	}
 }
 
-int available_response_bytes(void * origin_data) {
+int available_parser_bytes(void * origin_data) {
 	proxy_origin_active_socket_data * data = origin_data;
 	parser_data * parser_data = data->parser_data;
-	//Esto es... polemico
 	int ret = buffer_space(data->write_buff) > buffer_space(data->parser_buff) ? buffer_space(data->parser_buff) : buffer_space(data->write_buff);
+	/* The response will likely get longer due to the chunked encoding */
+	return (ret - 80) > 0 ? ret - 80 : 0;
+}
+
+int available_write_bytes(void * origin_data) {
+	proxy_origin_active_socket_data * data = origin_data;
+	parser_data * parser_data = data->parser_data;
+	int ret = buffer_space(data->write_buff);
 	/* The response will likely get longer due to the chunked encoding */
 	return (ret - 80) > 0 ? ret - 80 : 0;
 }
@@ -171,7 +187,8 @@ void parse_content(proxy_origin_active_socket_data * data, struct selector_key *
 				continue;
 			}
 
-			//TODO: que pasa si no encuentro chunked ni context length
+			//TODO: que pasa si no encuentro chunked ni context length -> puedo setear el content length en infinito (o sea, en -2 por ejemplo)
+			
 			buffer_write_data(data->write_buff, aux, ret);
 			aux[ret] = 0;
 
