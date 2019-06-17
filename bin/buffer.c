@@ -64,6 +64,33 @@ int buffer_peek_line (buffer * buff, char * dest_buff, int size) {
     return 0;
 }
 
+int buffer_peek_until_null (buffer * buff, char * dest_buff, int size) {
+    int aux = buff->peek_line;
+
+    for (int i = 0; aux != buff->write; i++) {
+        if (i >= size)
+            return -1;
+
+        dest_buff[i] = buff->data[aux];
+
+        if (buff->data[aux] == '\0') {
+            dest_buff[i + 1] = '\0';
+            buff->peek_line = (aux + 1 == BUFFER_SIZE) ? 0 : aux + 1;
+            return i + 1;
+        }
+
+        aux++;
+        if (aux == BUFFER_SIZE)
+            aux = 0;
+    }
+
+    return 0;
+}
+
+void buffer_advance_read_to_peek(buffer * buff){
+    buff->read = buff->peek_line;
+}
+
 void buffer_free(buffer * buff) {
     free(buff);
 }
