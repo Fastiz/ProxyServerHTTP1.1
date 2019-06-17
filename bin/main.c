@@ -39,10 +39,7 @@ int main(int argc, char *argv[]) {
 	fd_selector selector = NULL;
 
 	socket_server = open_server_socket(global_settings.proxy_port);
-
-    //ToDo: checkear que el puerto es int
-    in_port_t servPortConfig = atoi(argv[2]);             // Second arg:  local port
-    socketServerConfig = open_server_socket_config(servPortConfig);
+	socketServerConfig = open_server_socket_config(global_settings.management_port);
 
 	const struct selector_init conf = {
 		.signal = SIGALRM,

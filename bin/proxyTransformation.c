@@ -32,8 +32,8 @@ typedef struct proxy_transformation_data {
 } proxy_transformation_data;
 
 void * proxy_transformation_data_init(connection_data * connection_data) {
-	if (media_type_match(global_settings.media_types, connection_data->content_type) == 0)
-		return NULL;
+	//if (media_type_match(global_settings.media_types, connection_data->content_type) == 0)
+	//	return NULL;
 
 	proxy_transformation_data * data = malloc(sizeof(proxy_transformation_data));
 	if (data == NULL)
