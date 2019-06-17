@@ -21,7 +21,7 @@ void trim(char* line) {
 }
 
 void DieWithSystemMessage(char * msg) {
-	printf("%s", msg);
+	printf("%s\n", msg);
 	exit(1);
 }
 

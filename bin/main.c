@@ -15,21 +15,28 @@
 #include "include/main.h"
 #include "include/helpers.h"
 #include "include/proxyPassiveSocket.h"
+#include "include/proxySettings.h"
 
+proxy_settings global_settings = {8080, 9090, "", "", 0};
+
+extern char *optarg;
+extern int optind, opterr, optopt;
 static const int MAXPENDING = 5; // Maximum outstanding connection requests
 
 /* Forwards. */
 static int open_client_socket( char* hostname, unsigned short port );
 static int open_server_socket( unsigned short port );
+static void parse_arguments(int argc, char *argv[]);
 
 int main(int argc, char *argv[]) {
-	int socketServer;
-	selector_status ss      = SELECTOR_SUCCESS;
+	
+	parse_arguments(argc, argv);
+
+	int socket_server;
+	selector_status ss = SELECTOR_SUCCESS;
 	fd_selector selector = NULL;
 
-	//ToDo: checkear que el puerto es int
-	in_port_t servPort = atoi(argv[1]);             // First arg:  local port
-	socketServer = open_server_socket(servPort);
+	socket_server = open_server_socket(global_settings.proxy_port);
 
 	const struct selector_init conf = {
 		.signal = SIGALRM,
@@ -40,20 +47,20 @@ int main(int argc, char *argv[]) {
 	};
 
 	if(0 != selector_init(&conf)) {
-		DieWithSystemMessage("initializing selector failed");
+		DieWithSystemMessage("Initializing selector failed");
 	}
 
 	selector = selector_new(1024);
 
 	if(selector == NULL) {
-		DieWithSystemMessage("unable to create selector");
+		DieWithSystemMessage("Unable to create selector");
 	}
 
-	//ToDo: deberia socketServer ser no bloqueante?
-	ss = selector_register(selector, socketServer, proxy_passive_socket_fd_handler(),
+	//ToDo: deberia socket_server ser no bloqueante?
+	ss = selector_register(selector, socket_server, proxy_passive_socket_fd_handler(),
 	                       OP_READ, NULL);
 	if(ss != SELECTOR_SUCCESS) {
-		DieWithSystemMessage("registering fd failed");
+		DieWithSystemMessage("Registering fd failed");
 	}
 
 	for(;;) {
@@ -63,7 +70,42 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-	exit( 0 );
+	return 0;
+}
+
+static void parse_arguments(int argc, char *argv[]) {
+	int opt;
+	while((opt = getopt(argc, argv, ":e:l:L:M:o:p:t:v")) != -1)  {  
+		switch(opt) {
+			case 'e':
+			//archivo de error
+			case 'h':
+			//ayuda
+			case 'l':
+			//direccion http
+			case 'L':
+			//direccion management
+			case 'M':
+				//ToDo: checkear espacio
+				strncpy(global_settings.media_types, optarg, 999);
+				break;
+			case 'o':
+				//ToDo: checkear que el puerto es int
+				global_settings.management_port = atoi(optarg);
+				break;
+			case 'p':
+				//ToDo: checkear que el puerto es int
+				global_settings.proxy_port = atoi(optarg);
+				break;
+			case 't':
+				//ToDo: checkear espacio
+				strncpy(global_settings.transformation_command, optarg, 999);
+				break;
+			case 'v':
+			break;
+			//version
+		}
+    }  
 }
 
 
@@ -93,7 +135,7 @@ static int open_server_socket(unsigned short port) {
 		DieWithSystemMessage("listen() failed");
 
 	if(selector_fd_set_nio(servSock) == -1) {
-		DieWithSystemMessage("setting server flags failed");
+		DieWithSystemMessage("Setting server flags failed");
 	}
 
 	return servSock;
