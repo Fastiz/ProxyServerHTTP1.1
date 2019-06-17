@@ -18,6 +18,7 @@ typedef struct {
 	int client_transformation_fd;
     int origin_transformation_fd;
 	void * transformation_data;
+    char content_type[100];
     int ssl;
     enum connection_states state;  
 } connection_data;

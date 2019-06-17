@@ -6,8 +6,9 @@
 #define CONFIGPASSIVESOCKET_H
 
 #include "selector.h"
+#include <stddef.h>
 
-fd_handler config_passive_socket_fd_handler_init(void);
+fd_handler * config_passive_socket_fd_handler_init(void);
 
 void config_passive_socket_read(struct selector_key *key);
 
