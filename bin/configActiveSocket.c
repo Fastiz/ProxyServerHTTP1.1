@@ -11,4 +11,6 @@ fd_handler config_active_socket_fd_handler_init(void){
             .handle_block = config_active_socket_block,
             .handle_close = config_active_socket_close
     };
+
+    void config_active_socket_read()
 }
