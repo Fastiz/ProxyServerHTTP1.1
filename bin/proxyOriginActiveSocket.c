@@ -31,6 +31,7 @@ typedef struct {
 	int content_length;
 	int chunk_size;
 	int chunk_bytes;
+	int chunk_enabled;
 } parser_data;
 
 /**
@@ -56,6 +57,7 @@ void reset_origin_data(connection_data * connection_data) {
 	parser_data->content_length = -1;
 	parser_data->chunk_size = -1;
 	parser_data->chunk_bytes = -1;
+	parser_data->chunk_enabled = 0;
 	connection_data->response_has_finished = 0;
 	connection_data->status_code = -1;
 
@@ -153,7 +155,7 @@ void proxy_origin_active_socket_read(struct selector_key *key) {
 			kill_origin(connection_data);
 			selector_set_interest(key->s, connection_data->client_fd, OP_WRITE);
 		} else {
-			/* Make sure the transformation gets to know that the origin server has closed */
+			/* Make sure the transformation knows that the origin server has closed */
 			connection_data->response_has_finished = 1;
 			selector_set_interest(key->s, connection_data->origin_transformation_fd, OP_WRITE);
 			connection_data->state = TRANSFORMER_MUST_CLOSE;
@@ -198,7 +200,7 @@ int parse_content(proxy_origin_active_socket_data * data, struct selector_key * 
 				continue;
 			}
 
-			//TODO: que pasa si no encuentro chunked ni context length -> puedo setear el content length en infinito (o sea, en -2 por ejemplo)
+			//TODO: que pasa si no encuentro chunked ni content length -> puedo setear el content length en infinito (o sea, en -2 por ejemplo)
 			
 			buffer_write_data(data->write_buff, aux, ret);
 
@@ -208,9 +210,24 @@ int parse_content(proxy_origin_active_socket_data * data, struct selector_key * 
 				break;
 			}
 
+			trim(aux);
+
 			if (strncasecmp(aux, "Content-Type:", 13) == 0) {
-				trim(aux);
 				strncpy(connection_data->content_type, aux+13, sizeof(connection_data->content_type) - 1);
+			}
+
+			if (connection_data->status_code == -1) {
+				int status;
+				if (sscanf(aux, "%*[^ ] %d %*[^ ]", &status) == 1) {
+					connection_data->status_code = status;
+					if (status == 204)
+						parser_data->content_length = 0;
+				} else
+					connection_data->status_code = 0;
+			}
+
+			if (strncasecmp(aux, "Transfer-Encoding: chunked", 26) == 0) {
+				parser_data->chunk_enabled = 1;
 			}
 		}
 
@@ -259,6 +276,8 @@ int read_unchunked(void * origin_data, char * dest_buff, int size) {
 		if (parser_data->content_length == 0)
 			data->connection_data->response_has_finished = 1;
 		//TODO: Si leo mas bytes que el context length es un internal server error!
+	} else if (parser_data->chunk_enabled == 0) {
+		ret = buffer_read_data(data->parser_buff, dest_buff, size);
 	} else {
 		int flag = 0;
 		char aux[20];
