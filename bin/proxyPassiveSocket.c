@@ -32,19 +32,30 @@ void proxy_passive_socket_read(struct selector_key *key) {
 
 	/* Wait for a client to connect */
 	int clientSocket = accept(key->fd, (struct sockaddr *) &clntAddr, &clntAddrLen);
-	if (clientSocket < 0)
-		DieWithSystemMessage("accept() failed");
+	if (clientSocket < 0) {
+		printf("accept() failed\n");
+		return;
+	}
 
 	if(selector_fd_set_nio(clientSocket) == -1) {
-		DieWithSystemMessage("setting client flags failed");
+		close(clientSocket);
+		printf("Setting client flags failed\n");
+		return;
 	}
 
 	void * clientData = proxy_client_active_socket_data_init(key->s, clientSocket);
+	if (clientData == NULL) {
+		close(clientSocket);
+		printf("Ran out of memory\n");
+		return;
+	}
 
 	/* clientSocket is connected to a client */
 	if(SELECTOR_SUCCESS != selector_register(key->s, clientSocket, proxy_client_active_socket_fd_handler(),
 	                                         OP_READ, clientData)) {
-		DieWithSystemMessage("registering client fd failed");
+		close(clientSocket);
+		free(clientData);
+		printf("Registering client fd failed\n");
 	}
 
 	/*char clntName[INET_ADDRSTRLEN];                                 // String to contain client address

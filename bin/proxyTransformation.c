@@ -5,9 +5,14 @@
 #include "include/proxyTransformation.h"
 #include "include/proxyOriginActiveSocket.h"
 #include "include/proxyClientActiveSocket.h"
+#include "include/proxySettings.h"
 
 #define READ 0
 #define WRITE 1
+
+extern proxy_settings global_settings;
+
+int media_type_match(char * media_types, char * content_type);
 
 static fd_handler fd = {
 	.handle_read = proxy_transformation_read,
@@ -27,15 +32,27 @@ typedef struct proxy_transformation_data {
 } proxy_transformation_data;
 
 void * proxy_transformation_data_init(connection_data * connection_data) {
+	if (media_type_match(global_settings.media_types, connection_data->content_type) == 0)
+		return NULL;
+
 	proxy_transformation_data * data = malloc(sizeof(proxy_transformation_data));
+	if (data == NULL)
+		return NULL;
+
 	data->connection_data = connection_data;
 	connection_data->transformation_data = data;
-	pipe(data->client_pipe);
-	pipe(data->origin_pipe);
+	if (pipe(data->client_pipe) < 0) {
+		return NULL;
+	}
+	if (pipe(data->origin_pipe) < 0) {
+		close(data->client_pipe[WRITE]);
+		close(data->client_pipe[READ]);
+		return NULL;
+	}
 	connection_data->client_transformation_fd = data->client_pipe[READ];
 	connection_data->origin_transformation_fd = data->origin_pipe[WRITE];
 
-	char * args[] = {"sed", "s/ITBA/ACME/", NULL};
+	char * command = global_settings.transformation_command;
 	pid_t pid = fork();
 	if (pid < 0) {
 		send_error(500, "Internal server error", (char*) 0, "Coudn't execute transformation", connection_data);
@@ -46,7 +63,7 @@ void * proxy_transformation_data_init(connection_data * connection_data) {
 		dup2(data->client_pipe[WRITE], 1);
 		close(data->origin_pipe[WRITE]);
 		close(data->client_pipe[READ]);
-		execvp(args[0], args);
+		execl("/bin/sh", "sh", "-c", command, (char *) 0);
 	}
 
 	close(data->client_pipe[WRITE]);
@@ -156,4 +173,69 @@ void kill_transformation(connection_data * connection_data) {
 	connection_data->transformation_data = NULL;
 	connection_data->client_transformation_fd = -1;
 	connection_data->origin_transformation_fd = -1;
+}
+
+enum media_type_match_states {
+	MATCH_TYPE,
+	MATCH_SUBTYPE,
+	SKIP_TYPE,
+	SKIP_SPACES
+};
+
+int media_type_match(char * media_types, char * content_type) {
+	int i, j;
+	for (i = 0; content_type[i] == ' '; i++);
+	content_type = content_type + i;
+	enum media_type_match_states state = SKIP_SPACES;
+	
+	for (i = 0;; i++) {
+		switch(state) {
+			case MATCH_TYPE:
+				if (media_types[i] == content_type[j])
+					j++;
+				else {
+					state = SKIP_TYPE;
+					break;
+				}
+				if (media_types[i] == '/') {
+					if (media_types[i+1] == '*')
+						return 1;
+					else
+						state = MATCH_SUBTYPE;
+				}
+				break;
+			case MATCH_SUBTYPE:
+				if (media_types[i] == ';' || media_types[i] == ',' || media_types[i] == ' ' || media_types[i] == '\0') {
+					if (content_type[j] == ';' || content_type[j] == ' ' || content_type[j] == '\0') {
+						return 1;
+					} else {
+						state = SKIP_TYPE;
+						break;
+					}
+				}
+				if (media_types[i] == content_type[j])
+					j++;
+				else {
+					state = SKIP_TYPE;
+				}
+				break;
+			case SKIP_TYPE:
+				if (media_types[i-1] == ',') {
+					i--;
+					state = SKIP_SPACES;
+				}
+				break;
+			case SKIP_SPACES:
+				if (media_types[i] != ' ') {
+					i--;
+					state = MATCH_TYPE;
+				}
+				break;
+		}
+
+		if (media_types[i] == '\0')
+			break;
+	}
+
+	return 0;
 }
