@@ -4,17 +4,18 @@
 
 #include "include/configPassiveSocket.h"
 
-#define NULL 0
 
-fd_handler config_passive_socket_fd_handler_init(void){
-	fd_handler fd = {
-		.handle_read = config_passive_socket_read,
-		.handle_write = NULL,
-		.handle_block = NULL,
-		.handle_close = NULL
-	};
+static fd_handler fd = {
+        .handle_read = config_passive_socket_read,
+        .handle_write = NULL,
+        .handle_block = NULL,
+        .handle_close = NULL
+};
+
+fd_handler * config_passive_socket_fd_handler_init(void){
+	return &fd;
 }
 
 void config_passive_socket_read(struct selector_key *key){
-
+    //TODO: hay que generar un socket activo
 }
