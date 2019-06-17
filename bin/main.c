@@ -25,8 +25,7 @@ extern int optind, opterr, optopt;
 static const int MAXPENDING = 5; // Maximum outstanding connection requests
 
 /* Forwards. */
-static int open_client_socket( char* hostname, unsigned short port );
-static int open_server_socket( unsigned short port );
+static int open_server_socket(unsigned short port);
 int open_server_socket_config(unsigned short port);
 static void parse_arguments(int argc, char *argv[]);
 

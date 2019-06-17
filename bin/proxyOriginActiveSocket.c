@@ -115,7 +115,6 @@ void proxy_origin_active_socket_read(struct selector_key *key) {
 	proxy_origin_active_socket_data * data = key->data;
 	connection_data * connection_data = data->connection_data;
 
-	int client_fd = connection_data->client_fd;
 	int origin_fd = key->fd;
 
 	char aux[1000];
@@ -165,7 +164,6 @@ void proxy_origin_active_socket_read(struct selector_key *key) {
 
 int available_parser_bytes(void * origin_data) {
 	proxy_origin_active_socket_data * data = origin_data;
-	parser_data * parser_data = data->parser_data;
 	int ret = buffer_space(data->write_buff) > buffer_space(data->parser_buff) ? buffer_space(data->parser_buff) : buffer_space(data->write_buff);
 	/* The response will likely get longer due to the chunked encoding */
 	return (ret - 80) > 0 ? ret - 80 : 0;
@@ -173,7 +171,6 @@ int available_parser_bytes(void * origin_data) {
 
 int available_write_bytes(void * origin_data) {
 	proxy_origin_active_socket_data * data = origin_data;
-	parser_data * parser_data = data->parser_data;
 	int ret = buffer_space(data->write_buff);
 	/* The response will likely get longer due to the chunked encoding */
 	return (ret - 80) > 0 ? ret - 80 : 0;
