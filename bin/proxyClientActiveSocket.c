@@ -89,11 +89,19 @@ static void process_ssl (struct selector_key *key);
 
 void * proxy_client_active_socket_data_init(fd_selector s, int client_fd) {
 	proxy_client_active_socket_data * data = malloc(sizeof(proxy_client_active_socket_data));
+	if (data == NULL)
+		return NULL;
+
 	data->state = READING_HEADER_FIRST_LINE;
 	data->read_buff = new_buffer();
 	data->write_buff = new_buffer();
 
 	connection_data * conn_data = malloc(sizeof(connection_data));
+	if (conn_data == NULL) {
+		free(data);
+		return NULL;
+	}
+
 	data->connection_data = conn_data;
 	conn_data->s = s;
 	conn_data->client_fd = client_fd;
@@ -390,7 +398,7 @@ static void * open_origin_socket(void * client_key) {
 		return 0;
 	}
 
-	int connectRet;
+	int connectRet = -1;
 	/* Iterate over returned addresses */
 	for (struct addrinfo *addr = addrList; addr != NULL; addr = addr->ai_next) {
 		sockfd = socket( addr->ai_family, addr->ai_socktype, addr->ai_protocol );
@@ -426,11 +434,16 @@ void proxy_client_active_socket_block(struct selector_key *key) {
 	selector_set_interest_key(key, OP_READ);
 
 	if(selector_fd_set_nio(connection_data->origin_fd) == -1) {
-		DieWithSystemMessage("setting origin server flags failed");
+		send_error(500, "Internal server error", (char*) 0, "Fatal error", connection_data);
+		return;
 	}
 
 	connection_data->ssl = data->ssl == NO_SSL ? 0 : 1;
 	void * origin_data = proxy_origin_active_socket_data_init(connection_data, data->write_buff, data->read_buff);
+	if (origin_data == NULL) {
+		send_error(500, "Internal server error", (char*) 0, "Ran out of memory", connection_data);
+		return;
+	}
 	connection_data->origin_data = origin_data;
 
 	if (data->ssl == SSL_CONNECTING) {
@@ -440,7 +453,7 @@ void proxy_client_active_socket_block(struct selector_key *key) {
 
 	if(SELECTOR_SUCCESS != selector_register(key->s, connection_data->origin_fd, proxy_origin_active_socket_fd_handler(),
 	                                         OP_WRITE, origin_data)) {
-		DieWithSystemMessage("registering fd failed");
+		send_error(500, "Internal server error", (char*) 0, "Fatal error", connection_data);
 	}
 }
 
@@ -454,5 +467,6 @@ void kill_client(connection_data * connection_data) {
 	buffer_free(data->read_buff);
 	kill_origin(connection_data);
 	selector_unregister_fd(connection_data->s, connection_data->client_fd);
+	free(data->connection_data);
 	free(data);
 }

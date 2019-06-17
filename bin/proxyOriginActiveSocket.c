@@ -7,6 +7,7 @@
 #include "include/helpers.h"
 #include "include/proxyOriginActiveSocket.h"
 #include "include/proxyTransformation.h"
+#include "include/proxySettings.h"
 
 static fd_handler fd = {
 	.handle_read = proxy_origin_active_socket_read,
@@ -44,7 +45,9 @@ typedef struct {
 	parser_data * parser_data;
 } proxy_origin_active_socket_data;
 
-void parse_content(proxy_origin_active_socket_data * data, struct selector_key * key);
+int parse_content(proxy_origin_active_socket_data * data, struct selector_key * key);
+
+extern proxy_settings global_settings;
 
 void reset_origin_data(connection_data * connection_data) {
 	proxy_origin_active_socket_data * data = connection_data->origin_data;
@@ -63,16 +66,22 @@ void reset_origin_data(connection_data * connection_data) {
 		connection_data->transformation_data = NULL;
 	} else {
 		parser_data->state = READING_HEADER;
-		connection_data->transformation_data = proxy_transformation_data_init(connection_data);
 	}
 }
 
 void * proxy_origin_active_socket_data_init(connection_data * connection_data, buffer * read, buffer * write) {
 	proxy_origin_active_socket_data * data = malloc(sizeof(proxy_origin_active_socket_data));
+	if (data == NULL)
+		return NULL;
+
 	data->read_buff = read;
 	data->write_buff = write;
 	data->parser_buff = new_buffer();
 	data->parser_data = malloc(sizeof(parser_data));
+	if (data->parser_data == NULL) {
+		free (data);
+		return NULL;
+	}
 
 	data->connection_data = connection_data;
 	connection_data->origin_data = data;
@@ -131,8 +140,12 @@ void proxy_origin_active_socket_read(struct selector_key *key) {
 		buffer_write_data(data->parser_buff, aux, ret);
 	} while (ret > 0);
 
-	if (dataToParse == 1)
-		parse_content(data, key);
+	if (dataToParse == 1) {
+		if (parse_content(data, key) == -1) {
+			send_error(500, "Internal server error", (char*) 0, "Unexpected body format", data->connection_data);
+			return;
+		}
+	}
 
 	if (ret == 0) {
 		/* Connection was closed */
@@ -166,7 +179,7 @@ int available_write_bytes(void * origin_data) {
 	return (ret - 80) > 0 ? ret - 80 : 0;
 }
 
-void parse_content(proxy_origin_active_socket_data * data, struct selector_key * key) {
+int parse_content(proxy_origin_active_socket_data * data, struct selector_key * key) {
 	parser_data * parser_data = data->parser_data;
 	connection_data * connection_data = data->connection_data;
 
@@ -176,6 +189,7 @@ void parse_content(proxy_origin_active_socket_data * data, struct selector_key *
 	if (parser_data->state == READING_HEADER) {
 		while ((ret = buffer_peek_line(data->parser_buff, aux, sizeof(aux))) > 0) {
 			buffer_read_data(data->parser_buff, aux, ret);
+			aux[ret] = 0;
 
 			if (strncasecmp(aux, "Content-Length:", 15) == 0) {
 				int contentLength;
@@ -190,11 +204,16 @@ void parse_content(proxy_origin_active_socket_data * data, struct selector_key *
 			//TODO: que pasa si no encuentro chunked ni context length -> puedo setear el content length en infinito (o sea, en -2 por ejemplo)
 			
 			buffer_write_data(data->write_buff, aux, ret);
-			aux[ret] = 0;
 
 			if (strcmp(aux, "\n") == 0 || strcmp(aux, "\r\n") == 0) {
 				parser_data->state = READING_BODY;
+				connection_data->transformation_data = proxy_transformation_data_init(connection_data);
 				break;
+			}
+
+			if (strncasecmp(aux, "Content-Type:", 13) == 0) {
+				trim(aux);
+				strncpy(connection_data->content_type, aux+13, sizeof(connection_data->content_type) - 1);
 			}
 		}
 
@@ -207,10 +226,8 @@ void parse_content(proxy_origin_active_socket_data * data, struct selector_key *
 				write_chunked(data, aux, ret);
 			}
 
-			if (ret == -1) {            /* Error */
-				send_error(500, "Internal server error", (char*) 0, "Unexpected body format", data->connection_data);
-				return;
-			}
+			if (ret == -1)            /* Error */
+				return -1;
 
 			if (response_has_finished(data) == 1) {
 				/* Write a 0-byte chunk to indicate end of body */
@@ -230,6 +247,8 @@ void parse_content(proxy_origin_active_socket_data * data, struct selector_key *
 
 		selector_set_interest(key->s, connection_data->client_fd, OP_WRITE);
 	}
+
+	return 0;
 }
 
 int response_has_finished(void * origin_data) {
