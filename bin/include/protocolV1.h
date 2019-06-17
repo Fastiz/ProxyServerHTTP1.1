@@ -7,18 +7,22 @@
 
 #include <stdint.h>
 #include "selector.h"
+#include "buffer.h"
 
 void read_protocol_v1(struct selector_key *key);
 void write_protocol_v1(struct selector_key *key);
+void close_protocol_v1(struct selector_key *key);
+void * protocol_data_init_v1(fd_selector s, int client_fd);
 
 
 
 //TODO: cambiar las metricas aca y en el .c
 typedef enum {METRIC1, METRIC2, METRIC3, METRIC4} metricsEnum;
 
-typedef enum {LOGIN=0, METRICS, TRANSFORMATIONS} structureIndex;
+typedef enum {LOGIN=0, METRICS, TRANSFORMATIONS, HEADER} structureIndex;
 
-typedef enum {PERMISSION_DENIED=-2, INTERNAL_ERROR, OK} responseNumber;
+//TODO: ver informe porque cambie el valor de -2 a 0
+typedef enum {PERMISSION_DENIED=0, INTERNAL_ERROR, OK} responseNumber;
 
 typedef enum {SET_STATUS=0, GET_STATUS, SET_MEDIA_TYPES, GET_MEDIA_TYPES, SET_TRANSFORMATION_COMMAND, GET_TRANSFORMATION_COMMAND} transformationsRequestTypes;
 
@@ -31,7 +35,7 @@ typedef struct {
     uint8_t expectedStructureIndex;
     buffer * readBuffer;
     buffer * writeBuffer;
-} data;
+} protocol_data_v1;
 
 
 /**

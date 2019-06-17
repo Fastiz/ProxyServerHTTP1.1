@@ -38,4 +38,8 @@ void buffer_free(buffer * buff);
 
 void buffer_clean(buffer * buff);
 
+int buffer_peek_until_null (buffer * buff, char * dest_buff, int size);
+
+void buffer_advance_read_to_peek(buffer * buff);
+
 #endif //BUFFER_H
