@@ -139,7 +139,7 @@ void proxy_transformation_write(struct selector_key *key) {
 		return;
 	}
 
-	if (response_has_finished(connection_data->origin_data) == 1) {
+	if (connection_data->response_has_finished == 1) {
 		data->origin_pipe[WRITE] = -1;
 		selector_unregister_fd(key->s, key->fd);
 	}

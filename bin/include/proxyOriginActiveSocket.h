@@ -19,8 +19,6 @@ int available_parser_bytes(void * origin_data);
 
 int available_write_bytes(void * origin_data);
 
-int response_has_finished(void * origin_data);
-
 void proxy_origin_active_socket_read(struct selector_key *key);
 
 void proxy_origin_active_socket_write(struct selector_key *key);
