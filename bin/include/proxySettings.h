@@ -8,8 +8,9 @@ typedef struct {
     char proxy_address[50];
 	in_port_t management_port;
     char management_address[50];
-    char media_types[1000];
-    char transformation_command[1000];
+    char media_types[500];
+    char transformation_command[500];
+    char transformation_error[100];
     int transformation_state;
     int bytes_received;
     int bytes_sent;

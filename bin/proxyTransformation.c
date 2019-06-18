@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <string.h>
+#include <fcntl.h>
 #include "include/helpers.h"
 #include "include/proxyTransformation.h"
 #include "include/proxyOriginActiveSocket.h"
@@ -34,8 +35,8 @@ typedef struct proxy_transformation_data {
 } proxy_transformation_data;
 
 void * proxy_transformation_data_init(connection_data * connection_data) {
-	if (connection_data->gzip || connection_data->status_code < 200 || connection_data->status_code >= 300)
-		return NULL;
+	//if (connection_data->gzip == 1 || connection_data->status_code < 200 || connection_data->status_code >= 300)
+	//	return NULL;
 
 	if (global_settings.transformation_state == 0 || strcmp(global_settings.transformation_command, "") == 0)
 		return NULL;
@@ -69,6 +70,9 @@ void * proxy_transformation_data_init(connection_data * connection_data) {
 	}
 
 	if (pid == 0) {
+		mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
+		int error_fd = open(global_settings.transformation_error, O_WRONLY | O_CREAT | O_TRUNC, mode);
+		dup2(error_fd, 2);
 		dup2(data->origin_pipe[READ], 0);
 		dup2(data->client_pipe[WRITE], 1);
 		close(data->origin_pipe[WRITE]);

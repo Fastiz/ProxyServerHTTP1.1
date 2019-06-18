@@ -288,7 +288,6 @@ int read_unchunked(void * origin_data, char * dest_buff, int size) {
 		parser_data->content_length -= ret;
 		if (parser_data->content_length == 0)
 			data->connection_data->response_has_finished = 1;
-		//TODO: Si leo mas bytes que el context length es un internal server error!
 	} else if (parser_data->chunk_enabled == 0) {
 		ret = buffer_read_data(data->parser_buff, dest_buff, size);
 	} else {

@@ -18,7 +18,7 @@
 #include "include/proxySettings.h"
 #include "include/configPassiveSocket.h"
 
-proxy_settings global_settings = {8080, "::", 9090, "127.0.0.1", "", "", 1, 0, 0, 0, 0, 50};
+proxy_settings global_settings = {8080, "::", 9090, "127.0.0.1", "", "", "/dev/null", 1, 0, 0, 0, 0, 50};
 
 extern char *optarg;
 extern int optind, opterr, optopt;
@@ -94,14 +94,15 @@ static void parse_arguments(int argc, char *argv[]) {
 	while((opt = getopt(argc, argv, ":e:l:L:M:o:p:t:v")) != -1)  {  
 		switch(opt) {
 			case 'e':
-			//archivo de error
+				strncpy(global_settings.transformation_error, optarg, sizeof(global_settings.transformation_error));
+				break;
 			case 'h':
 			//ayuda
 			case 'l':
 				strncpy(global_settings.proxy_address, optarg, sizeof(global_settings.proxy_address));
 				break;
 			case 'L':
-				strncpy(global_settings.management_address, optarg, sizeof(global_settings.proxy_address));
+				strncpy(global_settings.management_address, optarg, sizeof(global_settings.management_address));
 				break;
 			case 'M':
 				if (strlen(optarg) < sizeof(global_settings.media_types))

@@ -306,7 +306,6 @@ void proxy_client_active_socket_read(struct selector_key *key) {
 				printf(": New request to: %s:%d\n", host, port);
 			}
 		}
-
 	}
 
 	if (data->state == PASSING_CONTENT) {
