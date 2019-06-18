@@ -20,6 +20,33 @@ int login(struct selector_key * key);
 int metrics(struct selector_key * key);
 int transformations(struct selector_key * key);
 
+void returnPermissionDenied(struct selector_key * key){
+    protocol_data_v1 * socketData = key->data;
+    buffer * write_buffer = socketData->writeBuffer;
+
+    responseHeader resp = {.responseCode=PERMISSION_DENIED};
+    buffer_write_data(write_buffer, (void*)&resp, sizeof(responseHeader));
+    selector_set_interest_key(key, OP_WRITE);
+}
+
+void returnOK(struct selector_key * key){
+    protocol_data_v1 * socketData = key->data;
+    buffer * write_buffer = socketData->writeBuffer;
+
+    responseHeader resp = {.responseCode=OK};
+    buffer_write_data(write_buffer, (void*)&resp, sizeof(responseHeader));
+    selector_set_interest_key(key, OP_WRITE);
+}
+
+void returnInternalError(struct selector_key * key){
+    protocol_data_v1 * socketData = key->data;
+    buffer * write_buffer = socketData->writeBuffer;
+
+    responseHeader resp = {.responseCode=INTERNAL_ERROR};
+    buffer_write_data(write_buffer, (void*)&resp, sizeof(responseHeader));
+    selector_set_interest_key(key, OP_WRITE);
+}
+
 int login(struct selector_key * key){
     protocol_data_v1 * socketData = key->data;
 
@@ -31,27 +58,27 @@ int login(struct selector_key * key){
     int ret1 = buffer_peek_until_null(read_buffer, (char*)username, sizeof(username));
     int ret2 = buffer_peek_until_null(read_buffer, (char*)password, sizeof(password));
 
+    printf("%s, %s\n", username, password);
+
     if(ret1 > 0 && ret2 > 0){
-        //TODO: avanzar indice de lectura hasta el indice de peek
+
         buffer_advance_read_to_peek(read_buffer);
 
         responseHeader resp;
-
-        printf("Caracteres. Usuarios %d, contraseña: %d.\n", ret1,ret2);
-        printf("Strlen. Usuarios %d, contraseña: %d.\n", strlen(username),strlen(password));
-        printf("usuario: %s, contraseña: %s\n", username, password);
 
 
         for(int i=0; i < sizeof(users)/sizeof(userStruct); i++){
             if(strcmp(users[i].username, username) == 0){
                 if(strcmp(users[i].password, password) == 0){
-                    printf("Usuario correcto.\n");
                     resp.responseCode = OK;
                     socketData->loggedIn = 1;
                 }else{
-                    printf("Usuario incorrecto.\n");
                     resp.responseCode = PERMISSION_DENIED;
                 }
+
+                if(buffer_space(write_buffer)< sizeof(responseHeader))
+                    printf("ERROR!\n"); //TODO: error
+
                 buffer_write_data(write_buffer, (void*)&resp, sizeof(responseHeader));
                 selector_set_interest_key(key, OP_WRITE);
 
@@ -62,18 +89,15 @@ int login(struct selector_key * key){
             }
         }
 
-        printf("No existe el usuario.\n");
 
-        //resp.responseCode = PERMISSION_DENIED;
-        resp.responseCode = OK;
-
-        buffer_write_data(write_buffer, (void*)&resp, sizeof(responseHeader));
-        selector_set_interest_key(key, OP_WRITE);
+        returnPermissionDenied(key);
 
         socketData->expectedStructureIndex = HEADER;
 
         return 1;
     }
+
+    buffer_reset_peek_line(read_buffer);
 
     return 0;
 }
@@ -109,18 +133,51 @@ int transformations(struct selector_key * key){
     protocol_data_v1 * socketData = key->data;
 
     buffer * read_buffer = socketData->readBuffer;
+    buffer * write_buffer = socketData->writeBuffer;
 
     if(buffer_count(read_buffer) >= sizeof(transformationsRequest)){
+
+
         transformationsRequest req;
-        buffer_read_data(read_buffer, (void*)&req, sizeof(transformationsRequest));
-        
+        buffer_peek_data(read_buffer, (void*)&req, sizeof(transformationsRequest));
+
+
+
         //TODO: implementar para cada una de los tipos de transformaciones
         switch (req.type){
+            //TODO: por alguna razon cuando se hace login despues de hacer un set_status(0) se rompe todo.
             case SET_STATUS:
+                if(buffer_count(read_buffer) >= sizeof(transformationsRequest) + sizeof(setStatusTransformationsRequest)){
 
-                break;
+                    setStatusTransformationsRequest setReq;
+
+                    buffer_advance_read_to_peek(read_buffer);
+                    buffer_read_data(read_buffer, (void*)&setReq, sizeof(setStatusTransformationsRequest));
+
+                    if(socketData->loggedIn){
+
+                        if(setReq.setStatus == 1 || setReq.setStatus == 0){
+                            //TODO: llamar a set status
+                            printf("setStatus(%d)\n", setReq.setStatus);
+
+                            returnOK(key);
+                        }else{
+                            returnPermissionDenied(key);
+                        }
+
+                    }else{
+                        returnPermissionDenied(key);
+                    }
+                    socketData->expectedStructureIndex=HEADER;
+                    return 1;
+                }else{
+                    buffer_reset_peek_line(read_buffer);
+                    return 0;
+                }
             case GET_STATUS:
+                if(buffer_count(read_buffer) >= sizeof(transformationsRequest) + sizeof(setStatusTransformationsRequest)) {
 
+                }
                 break;
             case SET_MEDIA_TYPES:
 
@@ -138,15 +195,13 @@ int transformations(struct selector_key * key){
                 //TODO: error
                 break;
         }
-        return 1;
+        return 0;
     }else{
         return 0;
     }
 }
 
-//TODO: ver si esta loggeado
 void read_structure(struct selector_key * key){
-
     protocol_data_v1 * socketData = key->data;
     buffer * read_buff = socketData->readBuffer;
 
@@ -155,22 +210,20 @@ void read_structure(struct selector_key * key){
         if(socketData->expectedStructureIndex != HEADER){
             switch (socketData->expectedStructureIndex){
                 case LOGIN:
-                    printf("Login\n");
                     readSuccess = login(key);
                     break;
                 case METRICS:
-                    printf("Metrics\n");
-                    //readSuccess = metrics(key);
+                    readSuccess = metrics(key);
                     break;
                 case TRANSFORMATIONS:
-                    printf("Transformations\n");
-                    //readSuccess = transformations(key);
+                    readSuccess = transformations(key);
                     break;
                 default:
-                    //TODO: error
+                    //printf("ERROR\n");//TODO: error
                     break;
             }
         }else{
+
             //Entonces estamos esperando un header
             requestHeader req;
             if(buffer_count(read_buff)>=sizeof(req)){
@@ -179,7 +232,6 @@ void read_structure(struct selector_key * key){
                     //TODO: error
                     ;
                 socketData->expectedStructureIndex = req.structureIndex;
-                printf("Estamos esperando un header %d.\n", req.structureIndex);
             }else{
                 readSuccess=0;
             }
@@ -190,25 +242,26 @@ void read_structure(struct selector_key * key){
 }
 
 void read_protocol_v1(struct selector_key *key){
-
-    //TODO: acordarse de ver que pasa si el limite es el tamaño de aux
-    uint8_t aux[INTERNAL_BUFFER_SIZE];
+    char aux[INTERNAL_BUFFER_SIZE];
     protocol_data_v1 * socketData = key->data;
     buffer * buff = socketData->readBuffer;
     int client_fd = key->fd;
 
-    int available_space = buffer_space(buff);
-    int to_read = available_space > INTERNAL_BUFFER_SIZE ? INTERNAL_BUFFER_SIZE : available_space;
+    int ret, to_read;
+   // do{
+        int available_space = buffer_space(buff);
+        to_read = available_space > INTERNAL_BUFFER_SIZE ? INTERNAL_BUFFER_SIZE : available_space;
 
 
-    int ret = recv(client_fd, aux, to_read, 0);
-    if(!ret){
-        //TODO: error
-    }
-    buffer_write_data(buff, aux, to_read);
+        ret = recv(client_fd, (void*)aux, to_read, 0);
+        if(!ret){
+            //TODO: error
+            printf("ERROR!\n");
+        }
+        buffer_write_data(buff, aux, ret);
 
-    aux[to_read+1] = '\0';
-    printf("%s\n", aux);
+
+    //}while(ret == to_read);
 
     read_structure(key);
 }
@@ -228,8 +281,11 @@ void write_protocol_v1(struct selector_key *key){
         int bytes_sent = send(key->fd, &aux, to_read_max, 0);
         if(bytes_sent != to_read_max){
             //TODO: error
+            printf("ERROR!\n");
         }
     }
+
+    selector_set_interest_key(key, OP_READ);
 }
 
 //TODO: implementar

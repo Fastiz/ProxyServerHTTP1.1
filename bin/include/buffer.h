@@ -42,4 +42,6 @@ int buffer_peek_until_null (buffer * buff, char * dest_buff, int size);
 
 void buffer_advance_read_to_peek(buffer * buff);
 
+int buffer_peek_data (buffer * buff, char * dest_buffer, int size);
+
 #endif //BUFFER_H
