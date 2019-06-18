@@ -9,16 +9,16 @@ For proxy server installation run the following commands.
     -   cd bin
     Compile files and generate ./a.out executable:
     -   gcc helpers.c main.c proxyClientActiveSocket.c proxyOriginActiveSocket.c proxyPassiveSocket.c proxyTransformation.c selector.c buffer.c configPassiveSocket.c configActiveSocket.c protocolV1.c -pthread -Wall
-    Run the executable with port as first parameter:
-    -   ./a.out 9090 //9090 is the server port
+    Run the executable (will run in 8080 for proxy and 9090 for configuration):
+    -   ./a.out
 
     NOTE: if there is a problem with permissions run:
     -   chmod +x ./a.out
     and then execute the program again.
 
 == Proxy usage example ==
-    -   http_proxy=localhost:9090 curl google.com
-    -   https_proxy=localhost:9090 curl https://www.google.com
+    -   http_proxy=localhost:8080 curl google.com
+    -   https_proxy=localhost:8080 curl https://www.google.com
 
 == Configuration client example ==
 There is a client for connecting as proxy administrator that uses the protocol specified in the report file.
