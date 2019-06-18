@@ -115,6 +115,7 @@ void * proxy_client_active_socket_data_init(fd_selector s, int client_fd) {
 	conn_data->client_transformation_fd = -1;
 	conn_data->transformation_data = NULL;
 	conn_data->state = ALIVE;
+	strcpy(conn_data->client_name, "Unknown");
 
 	global_settings.current_connections++;
 	global_settings.total_connections++;
@@ -224,7 +225,8 @@ void proxy_client_active_socket_read(struct selector_key *key) {
 
 				data->state = CONNECTING;
 
-				printf("Nuevo request hacia: %s:%d\n", host, port);
+				printDate();
+				printf(": New request to: %s:%d\n", host, port);
 			} else {
 				data->state = SEARCHING_FOR_HEADER_HOST;
 				data->ssl = NO_SSL;
@@ -300,7 +302,8 @@ void proxy_client_active_socket_read(struct selector_key *key) {
 
 				data->state = CONNECTING;
 
-				printf("Nuevo request hacia: %s:%d\n", host, port);
+				printDate();
+				printf(": New request to: %s:%d\n", host, port);
 			}
 		}
 
@@ -476,6 +479,12 @@ void proxy_client_active_socket_close(struct selector_key *key) {
 	close(key->fd);
 }
 
+void set_client_name(void * client_data, char * client_name) {
+	proxy_client_active_socket_data * data = client_data;
+	connection_data * connection_data = data->connection_data;
+	strncpy(connection_data->client_name, client_name, sizeof(connection_data->client_name));
+}
+
 void kill_client(connection_data * connection_data) {
 	proxy_client_active_socket_data * data = connection_data->client_data;
 	buffer_free(data->write_buff);
@@ -483,6 +492,8 @@ void kill_client(connection_data * connection_data) {
 	kill_origin(connection_data);
 	selector_unregister_fd(connection_data->s, connection_data->client_fd);
 	global_settings.current_connections--;
+	printDate();
+	printf(": Ending connection with client %s\n", connection_data->client_name);
 	free(data->connection_data);
 	free(data);
 }

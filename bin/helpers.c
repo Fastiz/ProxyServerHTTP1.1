@@ -25,6 +25,18 @@ void DieWithSystemMessage(char * msg) {
 	exit(1);
 }
 
+void printDate() {
+	time_t now = time( (time_t*) 0 );
+	char timebuf[100];
+	strftime( timebuf, sizeof(timebuf), RFC1123FMT, gmtime( &now ) );
+	printf("%s", timebuf);	
+}
+
+void printLog(char * str) {
+	printDate();
+	printf(": %s", str);	
+}
+
 static void
 send_headers(int status, char* title, char* extra_header, char* mime_type, int length, time_t mod, connection_data * connection_data)
 {

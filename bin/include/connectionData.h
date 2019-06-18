@@ -22,7 +22,8 @@ typedef struct {
     int status_code;
     char content_type[100];
     int ssl;
-    enum connection_states state;  
+    enum connection_states state;
+    char client_name[100];
 } connection_data;
 
 #endif //CONNECTIONDATA_H

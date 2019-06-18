@@ -16,6 +16,8 @@ void proxy_client_active_socket_block(struct selector_key *key);
 
 void proxy_client_active_socket_close(struct selector_key *key);
 
+void set_client_name(void * client_data, char * client_name);
+
 void kill_client(connection_data * connection_data);
 
 #endif //PROXYACTIVESOCKET_H

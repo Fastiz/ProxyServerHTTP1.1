@@ -65,14 +65,12 @@ int main(int argc, char *argv[]) {
 		DieWithSystemMessage("Unable to create selector");
 	}
 
-	//ToDo: deberia socket_server ser no bloqueante?
 	ss = selector_register(selector, socket_server, proxy_passive_socket_fd_handler(),
 	                       OP_READ, NULL);
 	if(ss != SELECTOR_SUCCESS) {
 		DieWithSystemMessage("Registering fd failed");
 	}
 
-    //ToDo: deberia socketServer ser no bloqueante?
     ss = selector_register(selector, socket_server_config, config_passive_socket_fd_handler_init(),
                            OP_READ, NULL);
     if(ss != SELECTOR_SUCCESS) {
@@ -112,14 +110,14 @@ static void parse_arguments(int argc, char *argv[]) {
 			case 'o':
 				port = atoi(optarg);
 				if (port == 0)
-					printf("Invalid management port\n");
+					printLog("Invalid management port\n");
 				else
 					global_settings.management_port = port;
 				break;
 			case 'p':
 				port = atoi(optarg);
 				if (port == 0)
-					printf("Invalid proxy port\n");
+					printLog("Invalid proxy port\n");
 				else
 					global_settings.proxy_port = port;
 				break;

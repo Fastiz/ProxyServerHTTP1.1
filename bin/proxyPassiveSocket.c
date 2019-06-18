@@ -58,10 +58,17 @@ void proxy_passive_socket_read(struct selector_key *key) {
 		printf("Registering client fd failed\n");
 	}
 
-	/*char clntName[INET_ADDRSTRLEN];                                 // String to contain client address
+	char clntName[INET_ADDRSTRLEN];                                 // String to contain client address
 	   if (inet_ntop(AF_INET, &clntAddr.sin_addr.s_addr, clntName,
-	              sizeof(clntName)) != NULL)
-	        printf("Handling client %s/%d\n", clntName, ntohs(clntAddr.sin_port));
-	   else
-	        puts("Unable to get client address");*/
+	              sizeof(clntName)) != NULL) {
+					  printDate();
+					  char clntInfo[INET_ADDRSTRLEN];
+					  sprintf(clntInfo, "%s:%d", clntName, ntohs(clntAddr.sin_port));
+					  set_client_name(clientData, clntInfo);
+					  printf(": Handling client %s\n", clntInfo);
+				  }
+	   else {
+		   printDate();
+		   printf(": Unable to get client address");
+	   }
 }
