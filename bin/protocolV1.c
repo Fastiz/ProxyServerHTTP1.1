@@ -175,27 +175,100 @@ int transformations(struct selector_key * key){
                     return 0;
                 }
             case GET_STATUS:
-                if(buffer_count(read_buffer) >= sizeof(transformationsRequest) + sizeof(setStatusTransformationsRequest)) {
+                buffer_advance_read_to_peek(read_buffer);
 
+                if(socketData->loggedIn){
+                    //TODO: agarrar el status
+
+                    returnOK(key);
+                    getStatusTransformationsResponse res = {.getStatus=1}; //TODO: devolver valor real.
+
+                    buffer_write_data(write_buffer, (void*)&res, sizeof(getStatusTransformationsResponse));
+                    selector_set_interest_key(key, OP_WRITE);
+                }else{
+                    returnPermissionDenied(key);
                 }
-                break;
+                socketData->expectedStructureIndex=HEADER;
+                return 1;
             case SET_MEDIA_TYPES:
+                char media[100];
+                int res = buffer_peek_until_null(read_buffer, media, sizeof(media));
+                if(res==-1)
+                    printf("ERROR\n"); //TODO: error
+                if(res>0){
+                    buffer_advance_read_to_peek(read_buffer);
+                    if(socketData->loggedIn){
+                        //TODO: set media types
 
-                break;
+                        returnOK(key);
+                    }else{
+                        returnPermissionDenied(key);
+                    }
+                    socketData->expectedStructureIndex=HEADER;
+                    return 1;
+                }else{
+                    buffer_reset_peek_line(read_buffer);
+                    return 0;
+                }
             case GET_MEDIA_TYPES:
+                buffer_advance_read_to_peek(read_buffer);
 
-                break;
+                if(socketData->loggedIn){
+                    //TODO: agarrar los media types
+
+                    returnOK(key);
+
+                    char* phonyMediaTypes = "hola manola."
+                    buffer_write_data(write_buffer, phonyMediaTypes, strlen(phonyMediaTypes)+1);
+                    selector_set_interest_key(key, OP_WRITE);
+
+                }else{
+                    returnPermissionDenied(key);
+                }
+                socketData->expectedStructureIndex=HEADER;
+                return 1;
             case SET_TRANSFORMATION_COMMAND:
+                char command[200];
+                int res = buffer_peek_until_null(read_buffer, command, sizeof(command));
+                if(res==-1)
+                    printf("ERROR\n"); //TODO: error
 
-                break;
+                if(res>0){
+                    buffer_advance_read_to_peek(read_buffer);
+                    if(socketData->loggedIn){
+                        //TODO: set transformation command
+
+                        returnOK(key);
+                    }else{
+                        returnPermissionDenied(key);
+                    }
+                    socketData->expectedStructureIndex=HEADER;
+                    return 1;
+                }else{
+                    buffer_reset_peek_line(read_buffer);
+                    return 0;
+                }
             case GET_TRANSFORMATION_COMMAND:
+                buffer_advance_read_to_peek(read_buffer);
 
-                break;
+                if(socketData->loggedIn){
+                    //TODO: agarrar el comando real
+
+                    returnOK(key);
+
+                    char* phonyTransformationCommand = "como te va."
+                    buffer_write_data(write_buffer, phonyTransformationCommand, strlen(phonyTransformationCommand)+1);
+                    selector_set_interest_key(key, OP_WRITE);
+
+                }else{
+                    returnPermissionDenied(key);
+                }
+                socketData->expectedStructureIndex=HEADER;
+                return 1;
             default:
                 //TODO: error
                 break;
         }
-        return 0;
     }else{
         return 0;
     }
