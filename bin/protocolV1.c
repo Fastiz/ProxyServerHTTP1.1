@@ -126,7 +126,7 @@ int metrics(struct selector_key * key){
                 kill_socket(key);
             returnOK(key);
 
-            switch (req.metricCode){
+            switch ((int)req.metricCode){
                 case ACTUAL_CONNECTIONS:
                     resp.response=global_settings.current_connections;
                     break;
@@ -142,6 +142,8 @@ int metrics(struct selector_key * key){
             }
             buffer_write_data(write_buffer, (void*)&resp, sizeof(resp));
             selector_set_interest_key(key, OP_WRITE);
+
+            socketData->expectedStructureIndex=HEADER;
 
         }else{
             returnPermissionDenied(key);
@@ -170,7 +172,7 @@ int transformations(struct selector_key * key){
         char media[1000], command[1000];
         int res;
 
-        switch (req.type){
+        switch ((int)req.type){
             case SET_STATUS:
                 if(buffer_count(read_buffer) >= sizeof(transformationsRequest) + sizeof(setStatusTransformationsRequest)){
 
@@ -303,7 +305,7 @@ void read_structure(struct selector_key * key){
     int readSuccess=1;
     while(readSuccess){
         if(socketData->expectedStructureIndex != HEADER){
-            switch (socketData->expectedStructureIndex){
+            switch ((int)socketData->expectedStructureIndex){
                 case LOGIN:
                     readSuccess = login(key);
                     break;
