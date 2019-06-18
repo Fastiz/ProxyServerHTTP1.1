@@ -194,8 +194,9 @@ int media_type_match(char * media_types, char * content_type) {
 	for (i = 0;; i++) {
 		switch(state) {
 			case MATCH_TYPE:
-				if (media_types[i] == content_type[j])
+				if (media_types[i] == content_type[j]) {
 					j++;
+				}
 				else {
 					state = SKIP_TYPE;
 					break;
@@ -239,8 +240,9 @@ int media_type_match(char * media_types, char * content_type) {
 				break;
 		}
 
-		if (media_types[i] == '\0')
+		if (media_types[i] == '\0' && i > 0) {
 			break;
+		}
 	}
 
 	return 0;

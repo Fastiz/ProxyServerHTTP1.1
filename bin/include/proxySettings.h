@@ -5,7 +5,9 @@
 
 typedef struct {
     in_port_t proxy_port;
+    char proxy_address[50];
 	in_port_t management_port;
+    char management_address[50];
     char media_types[1000];
     char transformation_command[1000];
     int transformation_state;

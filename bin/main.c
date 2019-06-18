@@ -18,28 +18,35 @@
 #include "include/proxySettings.h"
 #include "include/configPassiveSocket.h"
 
-proxy_settings global_settings = {8080, 9090, "", "", 0, 0, 0, 0, 0, 50};
+proxy_settings global_settings = {8080, "::", 9090, "::1", "", "", 0, 0, 0, 0, 0, 50};
 
 extern char *optarg;
 extern int optind, opterr, optopt;
 static const int MAXPENDING = 5; // Maximum outstanding connection requests
 
 /* Forwards. */
-static int open_server_socket(unsigned short port);
-int open_server_socket_config(unsigned short port);
+static int open_server_socket_ipv4(unsigned short port);
+static int open_server_socket_ipv6(unsigned short port);
+static int open_server_socket_config_ipv4(unsigned short port);
+static int open_server_socket_config_ipv6(unsigned short port);
 static void parse_arguments(int argc, char *argv[]);
 
 
 int main(int argc, char *argv[]) {
 	parse_arguments(argc, argv);
 
-	int socket_server, socketServerConfig;
+	int socket_server, socket_server_config;
 	selector_status ss      = SELECTOR_SUCCESS;
 	fd_selector selector = NULL;
 
-	socket_server = open_server_socket(global_settings.proxy_port);
-	socketServerConfig = open_server_socket_config(global_settings.management_port);
-
+	socket_server = open_server_socket_ipv6(global_settings.proxy_port);
+	if (socket_server == -1)
+		socket_server = open_server_socket_ipv4(global_settings.proxy_port);
+	
+	socket_server_config = open_server_socket_config_ipv6(global_settings.management_port);
+	if (socket_server_config == -1)
+		socket_server_config = open_server_socket_config_ipv4(global_settings.management_port);
+	
 	const struct selector_init conf = {
 		.signal = SIGALRM,
 		.select_timeout = {
@@ -66,7 +73,7 @@ int main(int argc, char *argv[]) {
 	}
 
     //ToDo: deberia socketServer ser no bloqueante?
-    ss = selector_register(selector, socketServerConfig, config_passive_socket_fd_handler_init(),
+    ss = selector_register(selector, socket_server_config, config_passive_socket_fd_handler_init(),
                            OP_READ, NULL);
     if(ss != SELECTOR_SUCCESS) {
         DieWithSystemMessage("registering fd failed");
@@ -93,9 +100,11 @@ static void parse_arguments(int argc, char *argv[]) {
 			case 'h':
 			//ayuda
 			case 'l':
-			//direccion http
+				strncpy(global_settings.proxy_address, optarg, sizeof(global_settings.proxy_address));
+				break;
 			case 'L':
-			//direccion management
+				strncpy(global_settings.management_address, optarg, sizeof(global_settings.proxy_address));
+				break;
 			case 'M':
 				if (strlen(optarg) < sizeof(global_settings.media_types))
 					strncpy(global_settings.media_types, optarg, sizeof(global_settings.media_types) - 1);
@@ -127,7 +136,7 @@ static void parse_arguments(int argc, char *argv[]) {
 }
 
 
-static int open_server_socket(unsigned short port) {
+static int open_server_socket_ipv4 (unsigned short port) {
 	in_port_t servPort = port;
 
 	/* Create socket for incoming connections */
@@ -139,8 +148,46 @@ static int open_server_socket(unsigned short port) {
 	struct sockaddr_in servAddr;                                          // Local address
 	memset(&servAddr, 0, sizeof(servAddr));                               // Zero out structure
 	servAddr.sin_family = AF_INET;                                        // IPv4 address family
-	servAddr.sin_addr.s_addr = htonl(INADDR_ANY);                         // Any incoming interface
+	if (inet_pton (AF_INET , global_settings.proxy_address, &servAddr.sin_addr.s_addr) != 1) {
+		close(servSock);
+		return -1;
+	}
 	servAddr.sin_port = htons(servPort);                                  // Local port
+
+	setsockopt(servSock, SOL_SOCKET, SO_REUSEADDR, &(int){ 1 }, sizeof(int));
+
+	/* Bind to the local address */
+	if (bind(servSock, (struct sockaddr*) &servAddr, sizeof(servAddr)) < 0)
+		DieWithSystemMessage("bind() failed");
+
+	/* Mark the socket so it will listen for incoming connections */
+	if (listen(servSock, MAXPENDING) < 0)
+		DieWithSystemMessage("listen() failed");
+
+	if(selector_fd_set_nio(servSock) == -1) {
+		DieWithSystemMessage("setting server flags failed");
+	}
+
+	return servSock;
+}
+
+static int open_server_socket_ipv6(unsigned short port) {
+	in_port_t servPort = port;
+
+	/* Create socket for incoming connections */
+	int servSock;                             // Socket descriptor for server
+	if ((servSock = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP)) < 0)
+		DieWithSystemMessage("socket() failed");
+
+	/* Construct local address structure */
+	struct sockaddr_in6 servAddr;                                            // Local address
+	memset(&servAddr, 0, sizeof(servAddr));                                  // Zero out structure
+	servAddr.sin6_family = AF_INET6;                                         // IPv6 address family
+	if (inet_pton (AF_INET6, global_settings.proxy_address, &servAddr.sin6_addr) != 1) {
+		close(servSock);
+		return -1;
+	}
+	servAddr.sin6_port = htons(servPort);                                    // Proxy port
 
 	setsockopt(servSock, SOL_SOCKET, SO_REUSEADDR, &(int){ 1 }, sizeof(int));
 
@@ -160,7 +207,7 @@ static int open_server_socket(unsigned short port) {
 }
 
 //Creates a SCTP passive socket for config protocol
-int open_server_socket_config(unsigned short port){
+static int open_server_socket_config_ipv4(unsigned short port){
     in_port_t servPort = port;
 
     /* Create socket for incoming connections */
@@ -172,10 +219,49 @@ int open_server_socket_config(unsigned short port){
     struct sockaddr_in servAddr;                                          // Local address
     memset(&servAddr, 0, sizeof(servAddr));                               // Zero out structure
     servAddr.sin_family = AF_INET;                                        // IPv4 address family
-    servAddr.sin_addr.s_addr = htonl(INADDR_ANY);                         // Any incoming interface
+    if (inet_pton (AF_INET , global_settings.management_address, &servAddr.sin_addr.s_addr) != 1) {
+		close(servSock);
+		return -1;
+	}
     servAddr.sin_port = htons(servPort);
 
-    //TODO: preguntarle a eze que hace setsockopt
+    setsockopt(servSock, SOL_SOCKET, SO_REUSEADDR, &(int){ 1 }, sizeof(int));
+
+    /* Bind to the local address */
+    if (bind(servSock, (struct sockaddr*) &servAddr, sizeof(servAddr)) < 0)
+        DieWithSystemMessage("bind() failed");
+
+    /* Mark the socket so it will listen for incoming connections */
+    if (listen(servSock, MAXPENDING) < 0)
+        DieWithSystemMessage("listen() failed");
+
+    if(selector_fd_set_nio(servSock) == -1)
+        DieWithSystemMessage("setting server flags failed");
+
+    return servSock;
+
+}
+
+//Creates a SCTP passive socket for config protocol
+static int open_server_socket_config_ipv6(unsigned short port){
+    in_port_t servPort = port;
+
+    /* Create socket for incoming connections */
+    int servSock;                             // Socket descriptor for server
+    if ((servSock = socket(AF_INET6, SOCK_STREAM, IPPROTO_SCTP)) < 0)
+        DieWithSystemMessage("socket() failed");
+
+    /* Construct local address structure */
+    struct sockaddr_in6 servAddr;                                              // Local address
+    memset(&servAddr, 0, sizeof(servAddr));                                    // Zero out structure
+    servAddr.sin6_family = AF_INET6;                                           // IPv4 address family
+	if (inet_pton (AF_INET6, global_settings.management_address, &servAddr.sin6_addr) != 1) {
+		close(servSock);
+		return -1;
+	}
+    servAddr.sin6_port = htons(servPort);									   // Management port
+
+    setsockopt(servSock, SOL_SOCKET, SO_REUSEADDR, &(int){ 1 }, sizeof(int));
 
     /* Bind to the local address */
     if (bind(servSock, (struct sockaddr*) &servAddr, sizeof(servAddr)) < 0)
