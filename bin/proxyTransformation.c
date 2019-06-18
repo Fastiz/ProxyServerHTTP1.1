@@ -32,8 +32,11 @@ typedef struct proxy_transformation_data {
 } proxy_transformation_data;
 
 void * proxy_transformation_data_init(connection_data * connection_data) {
-	//if (media_type_match(global_settings.media_types, connection_data->content_type) == 0)
-	//	return NULL;
+	if (connection_data->status_code < 200 && connection_data->status_code >= 300)
+		return NULL;
+
+	if  (media_type_match(global_settings.media_types, connection_data->content_type) == 0)
+		return NULL;
 
 	proxy_transformation_data * data = malloc(sizeof(proxy_transformation_data));
 	if (data == NULL)
@@ -139,7 +142,7 @@ void proxy_transformation_write(struct selector_key *key) {
 		return;
 	}
 
-	if (response_has_finished(connection_data->origin_data) == 1) {
+	if (connection_data->response_has_finished == 1) {
 		data->origin_pipe[WRITE] = -1;
 		selector_unregister_fd(key->s, key->fd);
 	}
@@ -227,7 +230,10 @@ int media_type_match(char * media_types, char * content_type) {
 				break;
 			case SKIP_SPACES:
 				if (media_types[i] != ' ') {
+					if (media_types[i] == '*')
+						return 1;
 					i--;
+					j = 0;
 					state = MATCH_TYPE;
 				}
 				break;

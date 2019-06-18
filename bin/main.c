@@ -25,8 +25,7 @@ extern int optind, opterr, optopt;
 static const int MAXPENDING = 5; // Maximum outstanding connection requests
 
 /* Forwards. */
-static int open_client_socket( char* hostname, unsigned short port );
-static int open_server_socket( unsigned short port );
+static int open_server_socket(unsigned short port);
 int open_server_socket_config(unsigned short port);
 static void parse_arguments(int argc, char *argv[]);
 
@@ -85,6 +84,8 @@ int main(int argc, char *argv[]) {
 
 static void parse_arguments(int argc, char *argv[]) {
 	int opt;
+	in_port_t port;
+
 	while((opt = getopt(argc, argv, ":e:l:L:M:o:p:t:v")) != -1)  {  
 		switch(opt) {
 			case 'e':
@@ -96,24 +97,31 @@ static void parse_arguments(int argc, char *argv[]) {
 			case 'L':
 			//direccion management
 			case 'M':
-				//ToDo: checkear espacio
-				strncpy(global_settings.media_types, optarg, 999);
+				if (strlen(optarg) < sizeof(global_settings.media_types))
+					strncpy(global_settings.media_types, optarg, sizeof(global_settings.media_types) - 1);
 				break;
 			case 'o':
-				//ToDo: checkear que el puerto es int
-				global_settings.management_port = atoi(optarg);
+				port = atoi(optarg);
+				if (port == 0)
+					printf("Invalid management port\n");
+				else
+					global_settings.management_port = port;
 				break;
 			case 'p':
-				//ToDo: checkear que el puerto es int
-				global_settings.proxy_port = atoi(optarg);
+				port = atoi(optarg);
+				if (port == 0)
+					printf("Invalid proxy port\n");
+				else
+					global_settings.proxy_port = port;
 				break;
 			case 't':
-				//ToDo: checkear espacio
-				strncpy(global_settings.transformation_command, optarg, 999);
+				if (strlen(optarg) < sizeof(global_settings.transformation_command))
+					strncpy(global_settings.transformation_command, optarg, sizeof(global_settings.transformation_command) - 1);
 				break;
 			case 'v':
+				printf("1.0.0\n");
+				exit(0);
 			break;
-			//version
 		}
     }  
 }
@@ -183,30 +191,3 @@ int open_server_socket_config(unsigned short port){
     return servSock;
 
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
