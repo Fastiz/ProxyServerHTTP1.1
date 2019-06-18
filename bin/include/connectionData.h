@@ -20,6 +20,7 @@ typedef struct {
 	void * transformation_data;
     int response_has_finished;
     int status_code;
+    int gzip;
     char content_type[100];
     int ssl;
     enum connection_states state;

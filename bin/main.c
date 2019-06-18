@@ -161,6 +161,9 @@ static int open_server_socket_ipv4 (unsigned short port) {
 	/* Mark the socket so it will listen for incoming connections */
 	if (listen(servSock, MAXPENDING) < 0)
 		DieWithSystemMessage("listen() failed");
+	
+	printDate();
+	printf(": Proxy listening on port %d\n", servPort);
 
 	if(selector_fd_set_nio(servSock) == -1) {
 		DieWithSystemMessage("setting server flags failed");
@@ -196,6 +199,9 @@ static int open_server_socket_ipv6(unsigned short port) {
 	/* Mark the socket so it will listen for incoming connections */
 	if (listen(servSock, MAXPENDING) < 0)
 		DieWithSystemMessage("listen() failed");
+	
+	printDate();
+	printf(": Proxy listening on port %d\n", servPort);
 
 	if(selector_fd_set_nio(servSock) == -1) {
 		DieWithSystemMessage("Setting server flags failed");
@@ -232,6 +238,9 @@ static int open_server_socket_config_ipv4(unsigned short port){
     /* Mark the socket so it will listen for incoming connections */
     if (listen(servSock, MAXPENDING) < 0)
         DieWithSystemMessage("listen() failed");
+		
+	printDate();
+	printf(": Manager listening on port %d\n", servPort);
 
     if(selector_fd_set_nio(servSock) == -1)
         DieWithSystemMessage("setting server flags failed");
@@ -268,6 +277,9 @@ static int open_server_socket_config_ipv6(unsigned short port){
     /* Mark the socket so it will listen for incoming connections */
     if (listen(servSock, MAXPENDING) < 0)
         DieWithSystemMessage("listen() failed");
+	
+	printDate();
+	printf(": Manager listening on port %d\n", servPort);
 
     if(selector_fd_set_nio(servSock) == -1)
         DieWithSystemMessage("setting server flags failed");

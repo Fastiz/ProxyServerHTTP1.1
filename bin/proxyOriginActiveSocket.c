@@ -60,6 +60,7 @@ void reset_origin_data(connection_data * connection_data) {
 	parser_data->chunk_enabled = 0;
 	connection_data->response_has_finished = 0;
 	connection_data->status_code = -1;
+	connection_data->gzip = 0;
 
 	kill_transformation(connection_data);
 
@@ -234,6 +235,12 @@ int parse_content(proxy_origin_active_socket_data * data, struct selector_key * 
 				/* Space after ':' is optional */
 				if (strncasecmp(aux+18, " chunked", 8) == 0 || strncasecmp(aux+18, "chunked", 7) == 0)
 					parser_data->chunk_enabled = 1;
+			}
+
+			if (strncasecmp(aux, "Content-Encoding:", 17) == 0) {
+				/* Space after ':' is optional */
+				if (strncasecmp(aux+17, " gzip", 5) == 0 || strncasecmp(aux+17, "gzip", 4) == 0)
+					connection_data->gzip = 1;
 			}
 		}
 
