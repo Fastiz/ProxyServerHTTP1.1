@@ -18,7 +18,7 @@
 #include "include/proxySettings.h"
 #include "include/configPassiveSocket.h"
 
-proxy_settings global_settings = {8080, "::", 9090, "::1", "", "", 0, 0, 0, 0, 0, 50};
+proxy_settings global_settings = {8080, "::", 9090, "127.0.0.1", "", "", 0, 0, 0, 0, 0, 50};
 
 extern char *optarg;
 extern int optind, opterr, optopt;
