@@ -6,6 +6,7 @@
 
 #include <sys/socket.h>
 #include <string.h>
+#include <unistd.h>
 
 
 #include "include/configUsers.h"
@@ -22,6 +23,7 @@ void read_structure(struct selector_key * key);
 int login(struct selector_key * key);
 int metrics(struct selector_key * key);
 int transformations(struct selector_key * key);
+void kill_socket(struct selector_key * key);
 
 void returnPermissionDenied(struct selector_key * key){
     protocol_data_v1 * socketData = key->data;
@@ -80,7 +82,7 @@ int login(struct selector_key * key){
                 }
 
                 if(buffer_space(write_buffer)< sizeof(responseHeader))
-                    printf("ERROR!\n"); //TODO: error
+                    kill_socket(key);
 
                 buffer_write_data(write_buffer, (void*)&resp, sizeof(responseHeader));
                 selector_set_interest_key(key, OP_WRITE);
@@ -121,7 +123,7 @@ int metrics(struct selector_key * key){
 
         if(socketData->loggedIn){
             if(buffer_space(write_buffer)< sizeof(metricResponse))
-                printf("ERROR\n"); //TODO: error
+                kill_socket(key);
             returnOK(key);
 
             switch (req.metricCode){
@@ -135,7 +137,7 @@ int metrics(struct selector_key * key){
                     resp.response=(global_settings.bytes_sent+global_settings.bytes_received);
                     break;
                 default:
-                    //TODO: error
+                    kill_socket(key);
                     break;
             }
             buffer_write_data(write_buffer, (void*)&resp, sizeof(resp));
@@ -215,7 +217,7 @@ int transformations(struct selector_key * key){
 
                 res = buffer_peek_until_null(read_buffer, media, sizeof(media));
                 if(res==-1)
-                    printf("ERROR\n"); //TODO: error
+                    kill_socket(key);
                 if(res>0){
                     buffer_advance_read_to_peek(read_buffer);
                     if(socketData->loggedIn){
@@ -250,7 +252,7 @@ int transformations(struct selector_key * key){
             case SET_TRANSFORMATION_COMMAND:
                 res = buffer_peek_until_null(read_buffer, command, sizeof(command));
                 if(res==-1)
-                    printf("ERROR\n"); //TODO: error
+                    kill_socket(key);
 
                 if(res>0){
                     buffer_advance_read_to_peek(read_buffer);
@@ -284,7 +286,7 @@ int transformations(struct selector_key * key){
                 socketData->expectedStructureIndex=HEADER;
                 return 1;
             default:
-                //TODO: error
+                kill_socket(key);
                 break;
 
         }
@@ -312,7 +314,7 @@ void read_structure(struct selector_key * key){
                     readSuccess = transformations(key);
                     break;
                 default:
-                    printf("ERROR\n");//TODO: error
+                    kill_socket(key);
                     break;
             }
         }else{
@@ -322,7 +324,7 @@ void read_structure(struct selector_key * key){
             if(buffer_count(read_buff)>=sizeof(req)){
                 buffer_read_data(read_buff, (void*)&req, sizeof(requestHeader));
                 if(req.version != 0)
-                    //TODO: error
+                    kill_socket(key);
                     ;
                 socketData->expectedStructureIndex = req.structureIndex;
             }else{
@@ -348,8 +350,7 @@ void read_protocol_v1(struct selector_key *key){
 
         ret = recv(client_fd, (void*)aux, to_read, 0);
         if(!ret){
-            //TODO: error
-            printf("ERROR!\n");
+            kill_socket(key);
         }
         buffer_write_data(buff, aux, ret);
 
@@ -373,17 +374,27 @@ void write_protocol_v1(struct selector_key *key){
 
         int bytes_sent = send(key->fd, &aux, to_read_max, 0);
         if(bytes_sent != to_read_max){
-            //TODO: error
-            printf("ERROR!\n");
+            kill_socket(key);
         }
     }
 
     selector_set_interest_key(key, OP_READ);
 }
 
-//TODO: implementar
+
 void close_protocol_v1(struct selector_key *key){
-    return;
+    close(key->fd);
+}
+
+void kill_socket(struct selector_key * key){
+    protocol_data_v1 * data = malloc(sizeof(protocol_data_v1));
+
+    free(data->readBuffer);
+    free(data->writeBuffer);
+
+    selector_unregister_fd(key->s, key->fd);
+
+    free(data);
 }
 
 
