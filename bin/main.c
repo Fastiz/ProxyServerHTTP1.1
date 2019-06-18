@@ -232,18 +232,21 @@ static int open_server_socket_config_ipv4(unsigned short port){
     setsockopt(servSock, SOL_SOCKET, SO_REUSEADDR, &(int){ 1 }, sizeof(int));
 
     /* Bind to the local address */
-    if (bind(servSock, (struct sockaddr*) &servAddr, sizeof(servAddr)) < 0)
+    if (bind(servSock, (struct sockaddr*) &servAddr, sizeof(servAddr)) < 0){
         DieWithSystemMessage("bind() failed");
+    }
 
     /* Mark the socket so it will listen for incoming connections */
-    if (listen(servSock, MAXPENDING) < 0)
+    if (listen(servSock, MAXPENDING) < 0){
         DieWithSystemMessage("listen() failed");
-		
+    }
+
 	printDate();
 	printf(": Manager listening on port %d\n", servPort);
 
-    if(selector_fd_set_nio(servSock) == -1)
+    if(selector_fd_set_nio(servSock) == -1){
         DieWithSystemMessage("setting server flags failed");
+    }
 
     return servSock;
 
@@ -271,18 +274,22 @@ static int open_server_socket_config_ipv6(unsigned short port){
     setsockopt(servSock, SOL_SOCKET, SO_REUSEADDR, &(int){ 1 }, sizeof(int));
 
     /* Bind to the local address */
-    if (bind(servSock, (struct sockaddr*) &servAddr, sizeof(servAddr)) < 0)
+    if (bind(servSock, (struct sockaddr*) &servAddr, sizeof(servAddr)) < 0){
         DieWithSystemMessage("bind() failed");
+    }
 
     /* Mark the socket so it will listen for incoming connections */
-    if (listen(servSock, MAXPENDING) < 0)
+    if (listen(servSock, MAXPENDING) < 0){
         DieWithSystemMessage("listen() failed");
+    }
+
 	
 	printDate();
 	printf(": Manager listening on port %d\n", servPort);
 
-    if(selector_fd_set_nio(servSock) == -1)
+    if(selector_fd_set_nio(servSock) == -1){
         DieWithSystemMessage("setting server flags failed");
+    }
 
     return servSock;
 
