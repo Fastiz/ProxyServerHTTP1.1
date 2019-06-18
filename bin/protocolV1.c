@@ -11,9 +11,12 @@
 #include "include/configUsers.h"
 #include "include/buffer.h"
 #include "include/protocolV1.h"
+#include "include/proxySettings.h"
 
 
 #define INTERNAL_BUFFER_SIZE 1000
+
+extern proxy_settings global_settings;
 
 void read_structure(struct selector_key * key);
 int login(struct selector_key * key);
@@ -106,22 +109,40 @@ int metrics(struct selector_key * key){
     protocol_data_v1 * socketData = key->data;
     
     buffer * read_buffer = socketData->readBuffer;
+    buffer * write_buffer = socketData->writeBuffer;
+
+    buffer_reset_peek_line(read_buffer);
 
     if(buffer_count(read_buffer) >= sizeof(metricRequest)){
         metricRequest req;
         buffer_read_data(read_buffer, (void*)&req, sizeof(metricRequest));
 
-        //TODO: implementar para cada una de las metricas
-        switch (req.metricCode){
-            case METRIC1:
+        metricResponse resp;
 
-                break;
-            case METRIC2:
+        if(socketData->loggedIn){
+            if(buffer_space(write_buffer)< sizeof(metricResponse))
+                printf("ERROR\n"); //TODO: error
+            returnOK(key);
 
-                break;
-            default:
-                //TODO: error
-                break;
+            switch (req.metricCode){
+                case ACTUAL_CONNECTIONS:
+                    resp.response=global_settings.current_connections;
+                    break;
+                case ALL_TIME_CONNECTIONS:
+                    resp.response=global_settings.total_connections;
+                    break;
+                case BYTES_TRANSFERRED:
+                    resp.response=(global_settings.bytes_sent+global_settings.bytes_received);
+                    break;
+                default:
+                    //TODO: error
+                    break;
+            }
+            buffer_write_data(write_buffer, (void*)&resp, sizeof(resp));
+            selector_set_interest_key(key, OP_WRITE);
+
+        }else{
+            returnPermissionDenied(key);
         }
         return 1;
     }else{
@@ -144,7 +165,7 @@ int transformations(struct selector_key * key){
         transformationsRequest req;
         buffer_peek_data(read_buffer, (void*)&req, sizeof(transformationsRequest));
 
-        char media[100], command[200];
+        char media[1000], command[1000];
         int res;
 
         switch (req.type){
@@ -159,7 +180,8 @@ int transformations(struct selector_key * key){
                     if(socketData->loggedIn){
 
                         if(setReq.setStatus == 1 || setReq.setStatus == 0){
-                            //TODO: llamar a set status
+
+                            global_settings.transformation_state = setReq.setStatus;
 
                             returnOK(key);
                         }else{
@@ -178,10 +200,9 @@ int transformations(struct selector_key * key){
             case GET_STATUS:
                 buffer_advance_read_to_peek(read_buffer);
                 if(socketData->loggedIn){
-                    //TODO: agarrar el status
 
                     returnOK(key);
-                    getStatusTransformationsResponse res = {.getStatus=1}; //TODO: devolver valor real.
+                    getStatusTransformationsResponse res = {.getStatus=global_settings.transformation_state};
 
                     buffer_write_data(write_buffer, (void*)&res, sizeof(getStatusTransformationsResponse));
                     selector_set_interest_key(key, OP_WRITE);
@@ -198,7 +219,8 @@ int transformations(struct selector_key * key){
                 if(res>0){
                     buffer_advance_read_to_peek(read_buffer);
                     if(socketData->loggedIn){
-                        //TODO: set media types
+
+                        strcpy(global_settings.media_types, media);
 
                         returnOK(key);
                     }else{
@@ -214,12 +236,10 @@ int transformations(struct selector_key * key){
                 buffer_advance_read_to_peek(read_buffer);
 
                 if(socketData->loggedIn){
-                    //TODO: agarrar los media types
 
                     returnOK(key);
 
-                    char* phonyMediaTypes = "hola manola.";
-                    buffer_write_data(write_buffer, phonyMediaTypes, strlen(phonyMediaTypes)+1);
+                    buffer_write_data(write_buffer, global_settings.media_types, strlen(global_settings.media_types)+1);
                     selector_set_interest_key(key, OP_WRITE);
 
                 }else{
@@ -235,7 +255,8 @@ int transformations(struct selector_key * key){
                 if(res>0){
                     buffer_advance_read_to_peek(read_buffer);
                     if(socketData->loggedIn){
-                        //TODO: set transformation command
+
+                        strcpy(global_settings.transformation_command, command);
 
                         returnOK(key);
                     }else{
@@ -251,12 +272,10 @@ int transformations(struct selector_key * key){
                 buffer_advance_read_to_peek(read_buffer);
 
                 if(socketData->loggedIn){
-                    //TODO: agarrar el comando real
 
                     returnOK(key);
 
-                    char* phonyTransformationCommand = "como te va.";
-                    buffer_write_data(write_buffer, phonyTransformationCommand, strlen(phonyTransformationCommand)+1);
+                    buffer_write_data(write_buffer, global_settings.transformation_command, strlen(global_settings.transformation_command)+1);
                     selector_set_interest_key(key, OP_WRITE);
 
                 }else{

@@ -13,11 +13,7 @@ void read_protocol_v1(struct selector_key *key);
 void write_protocol_v1(struct selector_key *key);
 void close_protocol_v1(struct selector_key *key);
 void * protocol_data_init_v1(fd_selector s, int client_fd);
-
-
-
-//TODO: cambiar las metricas aca y en el .c
-typedef enum {METRIC1, METRIC2, METRIC3, METRIC4} metricsEnum;
+typedef enum {ACTUAL_CONNECTIONS=0, ALL_TIME_CONNECTIONS, BYTES_TRANSFERRED} metricsEnum;
 
 typedef enum {LOGIN=0, METRICS, TRANSFORMATIONS, HEADER} structureIndex;
 
@@ -78,7 +74,7 @@ typedef struct {
 } responseHeader;
 
 typedef struct {
-    uint32_t size;
+    uint32_t response;
 } metricResponse;
 
 typedef struct {

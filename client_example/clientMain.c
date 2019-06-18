@@ -262,8 +262,40 @@ void getTransformationCommand(int fd){
     }
 }
 
+void getMetric(int metric, int fd){
+    int bytesSent = 0;
+
+    requestHeader reqHeader = {
+            .structureIndex = METRICS,
+            .version = 1
+    };
+
+    //Send header
+    bytesSent += send(fd, (void*)&reqHeader, sizeof(reqHeader), 0);
+
+    metricRequest mreq = {.metricCode=metric};
+    //Send transformation request
+    bytesSent += send(fd, (void*)&mreq, sizeof(mreq), 0);
+
+    responseHeader resp;
+    recv(fd, (void*)&resp, sizeof(responseHeader), 0);
+
+    if(resp.responseCode == OK){
+
+        metricResponse mresp;
+        recv(fd, (void*)&mresp, sizeof(metricResponse),0);
+
+        printf("Metric response: '%d'.\n", mresp.response);
+
+    }else if(resp.responseCode == PERMISSION_DENIED){
+        printf("It is required to login first.\n");
+    }else{
+        printf("An error ocurred.\n");
+    }
+}
+
 void findCommand(char * line, int fd){
-    char username[50], password[50], mediaTypes[100], command[200];
+    char username[50], password[50], mediaTypes[1000], command[1000];
     int num;
     if(sscanf(line, "login %s %s", username, password)==2){
         login(username, password, fd);
@@ -273,12 +305,18 @@ void findCommand(char * line, int fd){
         getStatus(fd);
     }else if(sscanf(line, "setMediaTypes %s", mediaTypes)==1) {
         setMediaTypes(mediaTypes, fd);
-    }else if(strcmp(line, "getMediaTypes\n")) {
+    }else if(strcmp(line, "getMediaTypes\n")==0) {
         getMediaTypes(fd);
-    }else if(sscanf(line, "setTransformationCommand %s", command)==1){
+    }else if(sscanf(line, "setTransformationCommand %[^\n]s", command)==1){
         setTransformationCommand(command, fd);
     }else if(strcmp(line, "getTransformationCommand\n")==0){
         getTransformationCommand(fd);
+    }else if(strcmp(line, "getCurrentConnections\n")==0){
+        getMetric(ACTUAL_CONNECTIONS,fd);
+    }else if(strcmp(line, "getTotalConnections\n")==0){
+        getMetric(ALL_TIME_CONNECTIONS,fd);
+    }else if(strcmp(line, "getBytesTransferred\n")==0){
+        getMetric(BYTES_TRANSFERRED,fd);
     }else{
         printf("Invalid command.\n");
     }
@@ -314,7 +352,7 @@ int main()
     long unsigned int len;
     while(1){
         getline(&line, &len, stdin);
-        //printf("%s", line);
+
         findCommand(line, connSock);
         free(line);
     }
