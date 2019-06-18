@@ -53,12 +53,12 @@ int login(struct selector_key * key){
     buffer * read_buffer = socketData->readBuffer;
     buffer * write_buffer = socketData->writeBuffer;
 
+    buffer_reset_peek_line(read_buffer);
+
     char username[50], password[50];
 
     int ret1 = buffer_peek_until_null(read_buffer, (char*)username, sizeof(username));
     int ret2 = buffer_peek_until_null(read_buffer, (char*)password, sizeof(password));
-
-    printf("%s, %s\n", username, password);
 
     if(ret1 > 0 && ret2 > 0){
 
@@ -130,10 +130,13 @@ int metrics(struct selector_key * key){
 }
 
 int transformations(struct selector_key * key){
+
     protocol_data_v1 * socketData = key->data;
 
     buffer * read_buffer = socketData->readBuffer;
     buffer * write_buffer = socketData->writeBuffer;
+
+    buffer_reset_peek_line(read_buffer);
 
     if(buffer_count(read_buffer) >= sizeof(transformationsRequest)){
 
@@ -141,11 +144,10 @@ int transformations(struct selector_key * key){
         transformationsRequest req;
         buffer_peek_data(read_buffer, (void*)&req, sizeof(transformationsRequest));
 
+        char media[100], command[200];
+        int res;
 
-
-        //TODO: implementar para cada una de los tipos de transformaciones
         switch (req.type){
-            //TODO: por alguna razon cuando se hace login despues de hacer un set_status(0) se rompe todo.
             case SET_STATUS:
                 if(buffer_count(read_buffer) >= sizeof(transformationsRequest) + sizeof(setStatusTransformationsRequest)){
 
@@ -158,7 +160,6 @@ int transformations(struct selector_key * key){
 
                         if(setReq.setStatus == 1 || setReq.setStatus == 0){
                             //TODO: llamar a set status
-                            printf("setStatus(%d)\n", setReq.setStatus);
 
                             returnOK(key);
                         }else{
@@ -176,7 +177,6 @@ int transformations(struct selector_key * key){
                 }
             case GET_STATUS:
                 buffer_advance_read_to_peek(read_buffer);
-
                 if(socketData->loggedIn){
                     //TODO: agarrar el status
 
@@ -191,8 +191,8 @@ int transformations(struct selector_key * key){
                 socketData->expectedStructureIndex=HEADER;
                 return 1;
             case SET_MEDIA_TYPES:
-                char media[100];
-                int res = buffer_peek_until_null(read_buffer, media, sizeof(media));
+
+                res = buffer_peek_until_null(read_buffer, media, sizeof(media));
                 if(res==-1)
                     printf("ERROR\n"); //TODO: error
                 if(res>0){
@@ -218,7 +218,7 @@ int transformations(struct selector_key * key){
 
                     returnOK(key);
 
-                    char* phonyMediaTypes = "hola manola."
+                    char* phonyMediaTypes = "hola manola.";
                     buffer_write_data(write_buffer, phonyMediaTypes, strlen(phonyMediaTypes)+1);
                     selector_set_interest_key(key, OP_WRITE);
 
@@ -228,8 +228,7 @@ int transformations(struct selector_key * key){
                 socketData->expectedStructureIndex=HEADER;
                 return 1;
             case SET_TRANSFORMATION_COMMAND:
-                char command[200];
-                int res = buffer_peek_until_null(read_buffer, command, sizeof(command));
+                res = buffer_peek_until_null(read_buffer, command, sizeof(command));
                 if(res==-1)
                     printf("ERROR\n"); //TODO: error
 
@@ -256,7 +255,7 @@ int transformations(struct selector_key * key){
 
                     returnOK(key);
 
-                    char* phonyTransformationCommand = "como te va."
+                    char* phonyTransformationCommand = "como te va.";
                     buffer_write_data(write_buffer, phonyTransformationCommand, strlen(phonyTransformationCommand)+1);
                     selector_set_interest_key(key, OP_WRITE);
 
@@ -268,7 +267,9 @@ int transformations(struct selector_key * key){
             default:
                 //TODO: error
                 break;
+
         }
+        return 0;
     }else{
         return 0;
     }
@@ -292,7 +293,7 @@ void read_structure(struct selector_key * key){
                     readSuccess = transformations(key);
                     break;
                 default:
-                    //printf("ERROR\n");//TODO: error
+                    printf("ERROR\n");//TODO: error
                     break;
             }
         }else{
