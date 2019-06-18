@@ -35,8 +35,8 @@ typedef struct proxy_transformation_data {
 } proxy_transformation_data;
 
 void * proxy_transformation_data_init(connection_data * connection_data) {
-	//if (connection_data->gzip == 1 || connection_data->status_code < 200 || connection_data->status_code >= 300)
-	//	return NULL;
+	if (connection_data->gzip == 1 || connection_data->status_code < 200 || connection_data->status_code >= 300)
+		return NULL;
 
 	if (global_settings.transformation_state == 0 || strcmp(global_settings.transformation_command, "") == 0)
 		return NULL;
