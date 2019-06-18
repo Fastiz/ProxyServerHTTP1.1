@@ -44,7 +44,7 @@ int buffer_read_data (buffer * buff, char * dest_buffer, int size) {
 int buffer_peek_data (buffer * buff, char * dest_buffer, int size) {
     int bytes_to_read = buffer_count(buff) > size ? size : buffer_count(buff);
     for (int i = 0; i < bytes_to_read; i++) {
-        dest_buffer[i] = buff->data[buff->read];
+        dest_buffer[i] = buff->data[buff->peek_line];
         (buff->peek_line)++;
         if (buff->peek_line == BUFFER_SIZE)
             buff->peek_line = 0;

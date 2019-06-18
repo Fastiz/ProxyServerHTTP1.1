@@ -1,6 +1,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <stdio.h>
+#include <string.h>
 #include "include/helpers.h"
 #include "include/proxyTransformation.h"
 #include "include/proxyOriginActiveSocket.h"
@@ -28,11 +29,15 @@ fd_handler * proxy_transformation_handler(void){
 typedef struct proxy_transformation_data {
 	int origin_pipe[2];
 	int client_pipe[2];
+	buffer * tmp_buff;
 	connection_data * connection_data;
 } proxy_transformation_data;
 
 void * proxy_transformation_data_init(connection_data * connection_data) {
 	if (connection_data->status_code < 200 && connection_data->status_code >= 300)
+		return NULL;
+
+	if (global_settings.transformation_state == 0 || strcmp(global_settings.transformation_command, "") == 0)
 		return NULL;
 
 	if  (media_type_match(global_settings.media_types, connection_data->content_type) == 0)
@@ -54,6 +59,8 @@ void * proxy_transformation_data_init(connection_data * connection_data) {
 	}
 	connection_data->client_transformation_fd = data->client_pipe[READ];
 	connection_data->origin_transformation_fd = data->origin_pipe[WRITE];
+
+	data->tmp_buff = new_buffer();
 
 	char * command = global_settings.transformation_command;
 	pid_t pid = fork();
@@ -131,13 +138,29 @@ void proxy_transformation_write(struct selector_key *key) {
 	connection_data * connection_data = data->connection_data;
 
 	char aux[1000];
-	int ret;
+	int read_ret, write_ret;
+	int pipe_full = 0;
 
-	while ((ret = read_unchunked(connection_data->origin_data, aux, sizeof(aux))) > 0) {
-		write(data->origin_pipe[WRITE], aux, ret);
+	while(pipe_full == 0 && buffer_count(data->tmp_buff) > 0) {
+		buffer_reset_peek_line(data->tmp_buff);
+		read_ret = buffer_peek_data(data->tmp_buff, aux, sizeof(aux));
+		write_ret = write(data->origin_pipe[WRITE], aux, read_ret);
+		write_ret = write_ret > 0 ? write_ret : 0;
+		buffer_read_data(data->tmp_buff, aux, write_ret);
+		if (write_ret < read_ret)
+			pipe_full = 1;
 	}
 
-	if (ret == -1) {     /* Error */
+	while (pipe_full == 0 && (read_ret = read_unchunked(connection_data->origin_data, aux, sizeof(aux))) > 0) {
+		write_ret = write(data->origin_pipe[WRITE], aux, read_ret);
+		write_ret = write_ret > 0 ? write_ret : 0;
+		if (write_ret < read_ret) {
+			buffer_write_data(data->tmp_buff, aux+write_ret, read_ret-write_ret);
+			pipe_full = 1;
+		}
+	}
+
+	if (pipe_full == 0 && read_ret == -1) {     /* Error */
 		send_error(500, "Internal server error", (char*) 0, "Unexpected body format", data->connection_data);
 		return;
 	}
@@ -147,7 +170,9 @@ void proxy_transformation_write(struct selector_key *key) {
 		selector_unregister_fd(key->s, key->fd);
 	}
 
-	selector_set_interest_key(key, OP_NOOP);
+	if (pipe_full == 0)
+		selector_set_interest_key(key, OP_NOOP);
+
 	selector_set_interest(key->s, connection_data->origin_fd, OP_READ);
 }
 
