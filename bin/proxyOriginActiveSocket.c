@@ -199,20 +199,20 @@ int parse_content(proxy_origin_active_socket_data * data, struct selector_key * 
 				/* Space after ':' is optional */
 				if (sscanf(aux + 15, "%d", &content_length) == 1 || sscanf(aux + 15, " %d", &content_length) == 1) {
 					parser_data->content_length = content_length;
-					buffer_write_data(data->write_buff, "Transfer-Encoding: chunked\n", 27);
 				}
 				continue;
 			}
 
-			//TODO: que pasa si no encuentro chunked ni content length -> puedo setear el content length en infinito (o sea, en -2 por ejemplo)
-			
-			buffer_write_data(data->write_buff, aux, ret);
-
 			if (strcmp(aux, "\n") == 0 || strcmp(aux, "\r\n") == 0) {
+				if (parser_data->chunk_enabled == 0)
+					buffer_write_data(data->write_buff, "Transfer-Encoding: chunked\n", 27);
+				buffer_write_data(data->write_buff, aux, ret);
 				parser_data->state = READING_BODY;
 				connection_data->transformation_data = proxy_transformation_data_init(connection_data);
 				break;
 			}
+			
+			buffer_write_data(data->write_buff, aux, ret);
 
 			trim(aux);
 
@@ -230,8 +230,10 @@ int parse_content(proxy_origin_active_socket_data * data, struct selector_key * 
 					connection_data->status_code = 0;
 			}
 
-			if (strncasecmp(aux, "Transfer-Encoding: chunked", 26) == 0) {
-				parser_data->chunk_enabled = 1;
+			if (strncasecmp(aux, "Transfer-Encoding:", 18) == 0) {
+				/* Space after ':' is optional */
+				if (strncasecmp(aux+18, " chunked", 8) == 0 || strncasecmp(aux+18, "chunked", 7) == 0)
+					parser_data->chunk_enabled = 1;
 			}
 		}
 

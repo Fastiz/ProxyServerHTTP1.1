@@ -46,7 +46,7 @@ void proxy_passive_socket_read(struct selector_key *key) {
 	void * clientData = proxy_client_active_socket_data_init(key->s, clientSocket);
 	if (clientData == NULL) {
 		close(clientSocket);
-		printf("Ran out of memory\n");
+		printf("Client rejected\n");
 		return;
 	}
 

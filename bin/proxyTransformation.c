@@ -170,7 +170,7 @@ void kill_transformation(connection_data * connection_data) {
 	if (data->origin_pipe[WRITE] != -1)
 		selector_unregister_fd(connection_data->s, data->origin_pipe[WRITE]);
 
-	//Y que hago con el proceso?
+	//ToDo: que hago con el proceso?
 
 	free(data);
 	connection_data->transformation_data = NULL;

@@ -16,6 +16,7 @@
 #include "include/proxyPassiveSocket.h"
 #include "include/proxyClientActiveSocket.h"
 #include "include/proxyOriginActiveSocket.h"
+#include "include/proxySettings.h"
 
 #define MAX_PORTSTRING_SIZE 10
 
@@ -87,6 +88,8 @@ typedef struct proxy_client_active_socket_data {
 static void * open_origin_socket(void * client_key);
 static void process_ssl (struct selector_key *key);
 
+extern proxy_settings global_settings;
+
 void * proxy_client_active_socket_data_init(fd_selector s, int client_fd) {
 	proxy_client_active_socket_data * data = malloc(sizeof(proxy_client_active_socket_data));
 	if (data == NULL)
@@ -113,6 +116,14 @@ void * proxy_client_active_socket_data_init(fd_selector s, int client_fd) {
 	conn_data->transformation_data = NULL;
 	conn_data->state = ALIVE;
 
+	global_settings.current_connections++;
+	global_settings.total_connections++;
+
+	if (global_settings.current_connections > global_settings.max_connections) {
+		send_error(500, "Internal server error", (char*) 0, "Proxy is too busy", conn_data);
+		return NULL;
+	}
+
 	return data;
 }
 
@@ -128,6 +139,7 @@ void proxy_client_active_socket_read(struct selector_key *key) {
 		int ret;
 		while ((ret = recv(client_fd, aux, sizeof(aux), 0)) > 0) {
 			//TODO: check buffer space
+			global_settings.bytes_received += ret;
 			buffer_write_data(data->write_buff, aux, ret);
 		}
 
@@ -226,6 +238,7 @@ void proxy_client_active_socket_read(struct selector_key *key) {
 		int ret;
 		while ((ret = recv(client_fd, aux, sizeof(aux), 0)) > 0) {
 			//TODO: check buffer space
+			global_settings.bytes_received += ret;
 			buffer_write_data(data->write_buff, aux, ret);
 		}
 		if (ret == 0) {
@@ -311,6 +324,7 @@ void proxy_client_active_socket_read(struct selector_key *key) {
 				break;
 			}
 			ret = recv(client_fd, aux, bytes_to_send, 0);
+			global_settings.bytes_received += ret;
 			buffer_write_data(data->write_buff, aux, ret);
 		} while (ret > 0);
 
@@ -353,6 +367,7 @@ void proxy_client_active_socket_write(struct selector_key *key) {
 	int ret;
 	while ((ret = buffer_read_data(data->read_buff, aux, sizeof(aux))) > 0) {
 		//TODO: checkear que se mandaron todos los bytes
+		global_settings.bytes_sent += ret;
 		send(key->fd, aux, ret, 0);
 	}
 
@@ -467,6 +482,7 @@ void kill_client(connection_data * connection_data) {
 	buffer_free(data->read_buff);
 	kill_origin(connection_data);
 	selector_unregister_fd(connection_data->s, connection_data->client_fd);
+	global_settings.current_connections--;
 	free(data->connection_data);
 	free(data);
 }
