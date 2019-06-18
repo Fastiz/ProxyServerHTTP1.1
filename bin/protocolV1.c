@@ -323,7 +323,7 @@ void read_structure(struct selector_key * key){
             requestHeader req;
             if(buffer_count(read_buff)>=sizeof(req)){
                 buffer_read_data(read_buff, (void*)&req, sizeof(requestHeader));
-                if(req.version != 0)
+                if(req.version != 1)
                     kill_socket(key);
                     ;
                 socketData->expectedStructureIndex = req.structureIndex;
