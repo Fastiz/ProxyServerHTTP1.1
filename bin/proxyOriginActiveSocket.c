@@ -116,6 +116,7 @@ int i = 0;
 void proxy_origin_active_socket_read(struct selector_key *key) {
 	proxy_origin_active_socket_data * data = key->data;
 	connection_data * connection_data = data->connection_data;
+	parser_data * parser_data = data->parser_data;
 
 	int origin_fd = key->fd;
 
@@ -151,6 +152,9 @@ void proxy_origin_active_socket_read(struct selector_key *key) {
 	if (ret == 0) {
 		/* Connection was closed */
 		if (connection_data->origin_transformation_fd == -1) {
+			/* No content length nor chunk encoding */
+			if (parser_data->chunk_enabled == 0 && parser_data->content_length == -1)
+				write_chunked(data, "", 0);
 			connection_data->state = CLOSED;
 			kill_origin(connection_data);
 			selector_set_interest(key->s, connection_data->client_fd, OP_WRITE);
