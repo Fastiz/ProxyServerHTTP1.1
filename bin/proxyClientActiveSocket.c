@@ -352,7 +352,7 @@ static void process_ssl (struct selector_key *key) {
 
 		if (ret > 0) {
 			char * str = "HTTP/1.0 200 Connection established\r\n\r\n";
-			send(key->fd, str, strlen(str), 0);
+			send(key->fd, str, strlen(str), MSG_NOSIGNAL);
 			buffer_clean(data->write_buff);
 			data->ssl = SSL_OK;
 		}
@@ -368,7 +368,7 @@ void proxy_client_active_socket_write(struct selector_key *key) {
 	while ((ret = buffer_read_data(data->read_buff, aux, sizeof(aux))) > 0) {
 		//TODO: checkear que se mandaron todos los bytes
 		global_settings.bytes_sent += ret;
-		send(key->fd, aux, ret, 0);
+		send(key->fd, aux, ret, MSG_NOSIGNAL);
 	}
 
 	if(connection_data->state == CLOSED) {

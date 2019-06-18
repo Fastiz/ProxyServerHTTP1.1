@@ -104,7 +104,7 @@ void proxy_origin_active_socket_write(struct selector_key *key){
 	int ret;
 	while ((ret = buffer_read_data(data->read_buff, aux, sizeof(aux))) > 0) {
 		//TODO: checkear que se mandaron todos los bytes
-		send(key->fd, aux, ret, 0);
+		send(key->fd, aux, ret, MSG_NOSIGNAL);
 	}
 
 	selector_set_interest_key(key, OP_READ);
