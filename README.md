@@ -20,10 +20,10 @@ If there are any problems with permissions run:
 First compile the proxy as explained before. Then just execute:  
 `./a.out`  
 Now if everything is working the program will print into the stdout that the proxy is listening on port 8080 and manager on port 9090.  
-Now for testing the proxy you may run for http:
-`http_proxy=localhost:8080 curl google.com`
-And with ssl:
-`https_proxy=localhost:8080 curl https://www.google.com`
+Now for testing the proxy you may run for http:  
+`http_proxy=localhost:8080 curl google.com`  
+And with ssl:  
+`https_proxy=localhost:8080 curl https://www.google.com`  
 If everything worked fine then html will be shown in stdout and in the proxy server console will have logged the connection. Note that when ssl is used the connection will appear on port 443.
 
 ## Running the client for the manager
